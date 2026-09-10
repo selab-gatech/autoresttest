@@ -1,7 +1,7 @@
 """Interactive configuration wizard for AutoRestTest."""
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from rich.align import Align
 from rich.box import DOUBLE, ROUNDED
@@ -146,7 +146,7 @@ class ConfigWizard:
         prompt_text: str,
         default: Any,
         value_type: type = str,
-        validation: Optional[callable] = None,
+        validation: Optional[Callable[[Any], Tuple[bool, str]]] = None,
     ) -> Any:
         """Prompt for a value with type conversion and optional validation."""
         default_display = (
