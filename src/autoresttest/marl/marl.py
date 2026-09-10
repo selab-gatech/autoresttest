@@ -1534,15 +1534,22 @@ class QLearning:
                     response.content
                     and self.successful_responses[operation_id] is not None
                 ):
+                    deconstructed_response: Dict[str, List] = {}
+                    response_content_valid = False
                     try:
                         response_content = json.loads(response.content)
-                    except json.JSONDecodeError:
+                        self._deconstruct_response(
+                            response_content, deconstructed_response
+                        )
+                    except (ValueError, RecursionError):
+                        # Invalid encodings, oversized integers, and excessive nesting
+                        # must not terminate testing or become learned response values.
                         print("Error decoding JSON response content")
                         print("Response content: ", response.content)
                         response_content = None
-
-                    deconstructed_response: Dict[str, List] = {}
-                    self._deconstruct_response(response_content, deconstructed_response)
+                        deconstructed_response.clear()
+                    else:
+                        response_content_valid = True
 
                     if deconstructed_response:
                         for (
@@ -1573,7 +1580,7 @@ class QLearning:
                                 ):
                                     self.data_source_agent.initialize_dependency_source()
 
-                    else:
+                    elif response_content_valid:
                         if operation_id not in self.successful_primitives:
                             self.successful_primitives[operation_id] = []
                         if isinstance(response_content, list):
