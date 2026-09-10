@@ -136,7 +136,9 @@ Steps:
 2. Ensure Python 3.10.x is available (project targets `>=3.10,<3.11`).
 3. Install dependencies with Poetry (uses `poetry.lock` if present):
    - `poetry install`
-4. Create a `.env` file in the project root and add:
+4. Copy `configurations.toml.example` to `configurations.toml` and customize the specification and provider settings:
+   - `cp configurations.toml.example configurations.toml`
+5. Create a `.env` file in the project root and add:
    - `API_KEY='<YOUR_API_KEY>'`
 
 Alternatives (provided but not recommended):
@@ -188,6 +190,16 @@ following configuration steps are completed for purposeful execution.
 
 There is a wide array of configuration options available within the codebase. All configuration options are easily accessible via a single TOML file at the project root: `configurations.toml`.
 
+Start with the tracked [configurations.toml.example](configurations.toml.example):
+
+```bash
+cp configurations.toml.example configurations.toml
+```
+
+Edit the local copy for your API and LLM provider. `configurations.toml` is ignored by Git; keep reusable defaults in the example and credentials in `.env`. The example is a starting point and is not loaded automatically.
+
+If you already have a `configurations.toml`, keep your settings rather than replacing it with the example. Back it up before updating an older checkout where the file was tracked, then restore it after updating. The new timeout settings have defaults, so existing configuration files continue to work without edits.
+
 Below are the relevant settings and where to find them in `configurations.toml`.
 
 #### 1. Specifying the API Specification
@@ -197,7 +209,7 @@ If you intend to use your own OpenAPI Specification file as described in the Ins
 Only `.yaml` and `.json` files are supported (OpenAPI 3.0). Example: `aratrl-openapi/market2.yaml`.
 
 Specification parsing is handled by [Prance](https://github.com/jfinkhaeuser/prance). If your spec has circular/self-referencing `$ref` chains, you can tune the resolver behavior with:
-- `[spec].recursion_limit` (default: `1`) — the maximum number of times a circular reference may appear in the resolution stack before a placeholder schema is substituted; a value of 1 means a self-referencing element is resolved once before being replaced.
+- `[spec].recursion_limit` (default: `50`) — the maximum number of times a circular reference may appear in the resolution stack before a placeholder schema is substituted; a value of 1 means a self-referencing element is resolved once before being replaced.
 - `[spec].strict_validation` (default: `true`) — when `true`, the OpenAPI spec is strictly validated and parsing stops on errors; when `false`, invalid sections are skipped where possible so execution can continue.
 
 #### 2. Configuring Reinforcement Learning Parameters
@@ -212,6 +224,8 @@ Instead of limiting episodes, the program limits RL iterations using a time budg
 
 > [!NOTE]
 > This time budget applies only to the MARL (Q-learning) phase. The initial value table generation phase, which runs before Q-learning begins, is not time-limited and will process all operations in the specification.
+
+Requests and retry waits consume the existing testing budget; they never increase `time_duration`. The runner uses a monotonic deadline and starts no further request attempts after it expires. An in-flight request can finish after the deadline: connection/read timeouts bound network inactivity, not the total time to receive a response. Initial generation uses the same network timeouts but has no overall phase deadline.
 
 #### Parameter Combination Sampling
 
@@ -252,7 +266,10 @@ AutoRestTest supports any LLM from an OpenAI-API compatible provider. Configure 
 | `[llm].api_base` | `https://api.openai.com/v1` | API endpoint URL. Change for alternative providers. |
 | `[llm].creative_temperature` | `1` | Temperature for creative parameter generation. |
 | `[llm].strict_temperature` | `1` | Temperature for repair or deterministic flows. |
-| `[llm].max_tokens` | `30000` | Maximum tokens for LLM response. Set to `-1` to omit and use provider default. |
+| `[llm].max_tokens` | `20000` | Maximum tokens for LLM response. Set to `-1` to omit and use provider default. |
+| `[llm].timeout_seconds` | `120.0` | Positive, finite network timeout for model-provider calls. |
+
+The LLM SDK retries eligible failures up to twice. AutoRestTest does not wrap those attempts in an additional retry loop. The timeout applies to network operations within each attempt, so a call including retries can take longer than `timeout_seconds`.
 
 **Example configurations:**
 
@@ -280,8 +297,8 @@ api_base = "http://localhost:1234/v1"
 #### 5. Use of Cached Graphs and Reinforcement Learning Tables
 
 The software can cache the graph and Q-tables to reduce cost and speed up repeated runs. Configure this behavior under:
-- `[cache].use_cached_graph` (default: `true`)
-- `[cache].use_cached_table` (default: `true`)
+- `[cache].use_cached_graph` (example: `false`)
+- `[cache].use_cached_table` (example: `false`)
 
 > [!IMPORTANT]
 > The cache parameter structure changed on Dec. 10, 2025. Recreate caches (clear `cache/` contents) so they remain compatible with newer runs.
@@ -338,6 +355,19 @@ When `override_url` is set to `true`, the tool constructs the API URL as `http:/
 | `override_url` | `false` | When `false`, uses the URL from the OpenAPI spec. When `true`, uses the custom host and port. |
 | `host` | `localhost` | The hostname for the custom API URL. |
 | `port` | `8080` | The port number for the custom API URL. |
+| `request_timeout_seconds` | `30.0` | Positive, finite connection/read inactivity timeout for requests to the API being tested, including setup requests. Applies regardless of `override_url`. |
+
+Configure the two network paths independently:
+
+```toml
+[llm]
+timeout_seconds = 120.0
+
+[api]
+request_timeout_seconds = 30.0
+```
+
+Add these options to the existing sections in your local configuration. During testing, request timeouts and 429 retry waits are limited by the remaining phase budget. During setup, a 429 response whose retry delay exceeds `request_timeout_seconds` is returned without another attempt, avoiding a long wait or an early retry against the server's instructions.
 
 > [!TIP]
 > This is useful when testing local services that run on a different port than specified in the OpenAPI spec, or when the spec contains a production URL but you want to test against a local or staging environment.
