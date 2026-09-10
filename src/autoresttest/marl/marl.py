@@ -1393,9 +1393,11 @@ class QLearning:
                             operation_id, used_dependent_params, used_dependent_body
                         )
                     )
-                elif data_source == "DEPENDENCY" and dependency_type == "RANDOM":
-                    if not 200 <= response.status_code < 300:
-                        continue
+                elif (
+                    data_source == "DEPENDENCY"
+                    and dependency_type == "RANDOM"
+                    and 200 <= response.status_code < 300
+                ):
                     if parameter_dependencies:
                         for (
                             parameter,
