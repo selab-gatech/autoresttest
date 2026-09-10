@@ -11,7 +11,7 @@ from openapi_spec_validator.validation.exceptions import (
     OpenAPIValidationError,
 )
 
-from autoresttest.config import get_config
+from autoresttest.config import Config, get_config
 from autoresttest.models import (
     OperationProperties,
     ParameterKey,
@@ -31,7 +31,6 @@ def json_spec_output(output_directory: Path, file_name: str, spec: Dict):
         json.dump(spec, file, ensure_ascii=False, indent=4)
 
 
-CONFIG = get_config()
 
 
 def default_recursive_limit_handler(
@@ -90,7 +89,8 @@ class SpecificationParser:
     Class to parse a specification file and return a dictionary of all the operations and their properties.
     """
 
-    def __init__(self, spec_path=None, spec_name=None):
+    def __init__(self, spec_path=None, spec_name=None, config: Config | None = None):
+        self.config = config if config is not None else get_config()
         self.spec_path = spec_path
         self.spec_name = spec_name
         if spec_path is None:
@@ -107,13 +107,13 @@ class SpecificationParser:
 
     def _build_resolving_parser(self, spec_path):
         parser_cls = (
-            ResolvingParser if CONFIG.strict_validation else LenientResolvingParser
+            ResolvingParser if self.config.strict_validation else LenientResolvingParser
         )
         return parser_cls(
             spec_path,
             backend="openapi-spec-validator",  # AutoRestTest supports OAS 3.x
             strict=True,
-            recursion_limit=CONFIG.recursion_limit,
+            recursion_limit=self.config.recursion_limit,
             recursion_limit_handler=default_recursive_limit_handler,
         )
 

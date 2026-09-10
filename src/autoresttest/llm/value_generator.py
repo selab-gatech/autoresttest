@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from autoresttest.config import get_config
+from autoresttest.config import Config, get_config
 from autoresttest.models import (
     OperationProperties,
     ParameterKey,
@@ -48,7 +48,6 @@ from autoresttest.utils import (
 
 from .llm import LanguageModel
 
-CONFIG = get_config()
 
 
 def randomize_boolean():
@@ -223,9 +222,11 @@ class SmartValueGenerator:
         self,
         operation_properties: OperationProperties,
         requirements: Optional[RequestRequirements] = None,
-        engine="gpt-4o",
-        temperature=CONFIG.creative_temperature,
+        engine=None,
+        temperature=None,
+        config: Config | None = None,
     ):
+        self.config = config if config is not None else get_config()
         self.operation_properties: OperationProperties = operation_properties
         self.processed_operation = remove_nulls(operation_properties.to_dict())
         self.parameters_raw: Dict[ParameterKey, ParameterProperties] = (
@@ -249,7 +250,9 @@ class SmartValueGenerator:
             "request_body"
         )
         self.summary: str = self.processed_operation.get("summary")
-        self.language_model = LanguageModel(temperature=temperature)
+        self.language_model = LanguageModel(
+            engine=engine, temperature=temperature, config=self.config
+        )
         self.parameter_requirements_raw: Dict[ParameterKey, Any] = (
             requirements.parameter_requirements if requirements else {}
         )
@@ -528,7 +531,9 @@ class SmartValueGenerator:
             if not generated_parameters or not generated_parameters.strip():
                 generated_parameters = {}
             else:
-                generated_parameters = attempt_fix_json(generated_parameters)
+                generated_parameters = attempt_fix_json(
+                    generated_parameters, config=self.config
+                )
         parameter_matchings = self._validate_parameters(
             generated_parameters.get("parameters") if isinstance(generated_parameters, dict) else None
         )
@@ -570,7 +575,9 @@ class SmartValueGenerator:
                 if not generated_request_body or not generated_request_body.strip():
                     generated_request_body = {}
                 else:
-                    generated_request_body = attempt_fix_json(generated_request_body)
+                    generated_request_body = attempt_fix_json(
+                        generated_request_body, config=self.config
+                    )
             validated_request_body = self.validate_request_body(
                 generated_request_body.get("request_body") if isinstance(generated_request_body, dict) else None
             )
@@ -605,7 +612,9 @@ class SmartValueGenerator:
             if not generated_parameters or not generated_parameters.strip():
                 generated_parameters = {}
             else:
-                generated_parameters = attempt_fix_json(generated_parameters)
+                generated_parameters = attempt_fix_json(
+                    generated_parameters, config=self.config
+                )
         parameter_matchings = self._validate_parameters(
             generated_parameters.get("parameters") if isinstance(generated_parameters, dict) else None
         )
@@ -644,7 +653,9 @@ class SmartValueGenerator:
                 if not generated_request_body or not generated_request_body.strip():
                     generated_request_body = {}
                 else:
-                    generated_request_body = attempt_fix_json(generated_request_body)
+                    generated_request_body = attempt_fix_json(
+                        generated_request_body, config=self.config
+                    )
             validated_request_body = self.validate_request_body(
                 generated_request_body.get("request_body") if isinstance(generated_request_body, dict) else None
             )
@@ -669,7 +680,9 @@ class SmartValueGenerator:
             if not auth_parameters or not auth_parameters.strip():
                 auth_parameters = {}
             else:
-                auth_parameters = attempt_fix_json(auth_parameters)
+                auth_parameters = attempt_fix_json(
+                    auth_parameters, config=self.config
+                )
         return auth_parameters.get("authentication_parameters") if isinstance(auth_parameters, dict) else None
 
     def _validate_value_params(
@@ -714,7 +727,9 @@ class SmartValueGenerator:
             if not generated_parameters or not generated_parameters.strip():
                 generated_parameters = {}
             else:
-                generated_parameters = attempt_fix_json(generated_parameters)
+                generated_parameters = attempt_fix_json(
+                    generated_parameters, config=self.config
+                )
         parameter_matchings = self._validate_value_params(
             generated_parameters.get("parameters") if isinstance(generated_parameters, dict) else None
         )
@@ -751,7 +766,9 @@ class SmartValueGenerator:
                 if not generated_request_body or not generated_request_body.strip():
                     generated_request_body = {}
                 else:
-                    generated_request_body = attempt_fix_json(generated_request_body)
+                    generated_request_body = attempt_fix_json(
+                        generated_request_body, config=self.config
+                    )
             validated_request_body = self._validate_value_body(
                 generated_request_body.get("request_body") if isinstance(generated_request_body, dict) else None
             )
@@ -788,7 +805,9 @@ class SmartValueGenerator:
                     generated_request_body = {}
                 else:
                     print("Handling a JSON decode error...")
-                    generated_request_body = attempt_fix_json(generated_request_body)
+                    generated_request_body = attempt_fix_json(
+                        generated_request_body, config=self.config
+                    )
             validated_request_body = self._validate_value_body(
                 generated_request_body.get("request_body") if isinstance(generated_request_body, dict) else None
             )
@@ -820,7 +839,9 @@ class SmartValueGenerator:
             if not generated_parameters or not generated_parameters.strip():
                 generated_parameters = {}
             else:
-                generated_parameters = attempt_fix_json(generated_parameters)
+                generated_parameters = attempt_fix_json(
+                    generated_parameters, config=self.config
+                )
         parameter_matchings = self._validate_value_params(
             generated_parameters.get("parameters") if isinstance(generated_parameters, dict) else None
         )

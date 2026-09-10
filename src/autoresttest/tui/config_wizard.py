@@ -11,10 +11,10 @@ from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
 from rich.table import Table
 from rich.text import Text
 
-from autoresttest.config import get_config
-from autoresttest.config.config import (
-    Config,
-)
+from autoresttest.config import Config, get_config
+
+# Re-export for callers that previously imported this helper from the wizard.
+from autoresttest.config import apply_config_overrides as apply_config_overrides
 
 from .themes import DEFAULT_THEME, TUITheme
 
@@ -61,11 +61,16 @@ class ConfigWizard:
         "Local": "http://localhost:1234/v1",
     }
 
-    def __init__(self, theme: TUITheme = DEFAULT_THEME, width: int = 100):
+    def __init__(
+        self,
+        theme: TUITheme = DEFAULT_THEME,
+        width: int = 100,
+        config: Config | None = None,
+    ):
         self.console = Console(force_terminal=True, width=width)
         self.theme = theme
         self.width = width
-        self._default_config = get_config()
+        self._default_config = config if config is not None else get_config()
 
     def _print_section(self, title: str, icon: str = ""):
         """Print a styled section header."""
@@ -662,29 +667,3 @@ class ConfigWizard:
 
         self.console.print()
         self.console.print(Align.center(table))
-
-
-def apply_config_overrides(overrides: Dict[str, Any]) -> Config:
-    """Apply configuration overrides and return a new Config object.
-
-    This creates a modified config without writing to disk.
-    """
-    from autoresttest.config.config import _load_raw_config
-
-    raw_config = _load_raw_config()
-
-    def deep_merge(base: Dict, override: Dict) -> Dict:
-        result = base.copy()
-        for key, value in override.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
-                result[key] = deep_merge(result[key], value)
-            else:
-                result[key] = value
-        return result
-
-    merged = deep_merge(raw_config, overrides)
-    return Config.model_validate(merged)

@@ -44,6 +44,7 @@ class OperationGraph:
         self.spec_path = spec_path
         self.spec_name = spec_name
         self.spec_parser = spec_parser
+        self.config = spec_parser.config
         self.request_generator: RequestGenerator | None = None
         self.operation_nodes: dict[str, OperationNode] = {}
         self.operation_edges: list[OperationEdge] = []

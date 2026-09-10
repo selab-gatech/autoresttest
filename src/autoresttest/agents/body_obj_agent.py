@@ -41,6 +41,7 @@ class BodyObjAgent(BaseAgent):
                             body_properties.properties.keys(),
                             required=required_body,
                             seed=f"{operation_id}:{mime}",
+                            config=self.operation_graph.config,
                         )
                         self.q_table[operation_id][mime] = {
                             body_obj: 0.0 for body_obj in body_obj_combinations

@@ -5,6 +5,7 @@ from unittest.mock import patch
 import requests
 
 from autoresttest.agents.parameter_agent import ParameterAction
+from autoresttest.config import apply_config_overrides
 from autoresttest.marl.marl import QLearning
 from autoresttest.models import (
     OperationProperties,
@@ -30,6 +31,7 @@ class RandomDependencyResponseTests(unittest.TestCase):
             },
         )
         graph = SimpleNamespace(
+            config=apply_config_overrides({"agents": {"header": {"enabled": False}}}),
             request_generator=SimpleNamespace(api_url="http://example.invalid"),
             operation_nodes={
                 "probe": SimpleNamespace(
@@ -61,10 +63,6 @@ class RandomDependencyResponseTests(unittest.TestCase):
         response.status_code = status_code
         response._content = b""
         with (
-            patch(
-                "autoresttest.marl.marl.CONFIG",
-                SimpleNamespace(enable_header_agent=False),
-            ),
             patch("autoresttest.marl.marl.time.monotonic", side_effect=[0, 0, 0, 2]),
             patch.object(learner.operation_agent, "get_action", return_value="probe"),
             patch.object(
