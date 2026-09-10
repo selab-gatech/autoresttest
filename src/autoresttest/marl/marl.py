@@ -120,7 +120,8 @@ class QLearning:
         if not param_type:
             return None
         avail_types = ["integer", "number", "string", "boolean", "array", "object"]
-        avail_types.remove(param_type)
+        if param_type in avail_types:
+            avail_types.remove(param_type)
         return identify_generator(random.choice(avail_types))()
 
     def get_boundary_value(self, param_type: str | None) -> Any:
@@ -698,11 +699,13 @@ class QLearning:
                             )
 
     def _construct_body_property(self, body_property, unconstructed_body):
+        if body_property is None:
+            return None
         if body_property.properties or body_property.type == "object":
             return {
                 prop: val
                 for prop, val in unconstructed_body.items()
-                if prop in body_property.properties
+                if prop in (body_property.properties or {})
             }
         elif body_property.items or body_property.type == "array":
             return [
