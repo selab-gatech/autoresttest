@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 import tomli as tomllib
 from dotenv import load_dotenv
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 # Load environment variables from .env file for custom header interpolation
 load_dotenv()
@@ -33,6 +33,7 @@ class LLMConfig(BaseModel):
     strict_temperature: float
     api_base: str = "https://api.openai.com/v1"
     max_tokens: int = 20000
+    timeout_seconds: float = Field(default=120.0, gt=0, allow_inf_nan=False)
 
 
 class HeaderAgentConfig(BaseModel):
@@ -77,6 +78,7 @@ class ApiConfig(BaseModel):
     override_url: bool = False
     host: str = "localhost"
     port: int = 8080
+    request_timeout_seconds: float = Field(default=30.0, gt=0, allow_inf_nan=False)
 
 
 class CustomHeadersConfig(BaseModel):
@@ -184,7 +186,10 @@ class Config(BaseModel):
 
 def _load_raw_config() -> Dict[str, Any]:
     if not CONFIG_PATH.exists():
-        raise FileNotFoundError(f"Configuration file not found: {CONFIG_PATH}")
+        raise FileNotFoundError(
+            f"Configuration file not found: {CONFIG_PATH}. "
+            "Copy configurations.toml.example to configurations.toml and edit it before running."
+        )
     with CONFIG_PATH.open("rb") as fh:
         return tomllib.load(fh)
 

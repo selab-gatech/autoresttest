@@ -5,6 +5,7 @@ import json
 import math
 import random
 import time
+from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, cast
 
@@ -507,21 +508,37 @@ def dispatch_request(
     max_retries: int = 3,
     base_delay: float = 1.0,
     accept: str | None = None,
+    timeout_seconds: float | None = None,
+    deadline: float | None = None,
 ):
     """
     Send a request with sensible handling for the provided body and MIME type key (if any).
     Includes automatic retry with exponential backoff for rate-limited (429) responses.
+    deadline, when supplied, is an absolute time.monotonic() testing deadline.
     """
     params = params or {}
     headers = header.copy() if header is not None else {}
     cookies = cookies or None
     if accept:
         headers.setdefault("Accept", accept)
+    if timeout_seconds is None:
+        timeout_seconds = get_config().api.request_timeout_seconds
 
     response = None
     for attempt in range(max_retries + 1):
+        request_timeout = timeout_seconds
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return response
+            request_timeout = min(request_timeout, remaining)
         response = _dispatch_request_inner(
-            select_method, full_url, params, body, headers.copy(), cookies
+            partial(select_method, timeout=request_timeout),
+            full_url,
+            params,
+            body,
+            headers.copy(),
+            cookies,
         )
 
         if response is None:
@@ -535,6 +552,15 @@ def dispatch_request(
                 retry_after = response.headers.get("Retry-After")
                 if retry_after and retry_after.isdigit():
                     delay = max(delay, int(retry_after))
+                if deadline is not None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return response
+                    delay = min(delay, remaining)
+                elif delay > timeout_seconds:
+                    # During setup, return the 429 rather than wait indefinitely
+                    # or retry earlier than the server requested.
+                    return response
                 print(
                     f"Rate limited (429). Retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})"
                 )

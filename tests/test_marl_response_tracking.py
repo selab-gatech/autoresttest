@@ -65,7 +65,7 @@ class RandomDependencyResponseTests(unittest.TestCase):
                 "autoresttest.marl.marl.CONFIG",
                 SimpleNamespace(enable_header_agent=False),
             ),
-            patch("autoresttest.marl.marl.time.time", side_effect=[0, 0, 0, 2]),
+            patch("autoresttest.marl.marl.time.monotonic", side_effect=[0, 0, 0, 2]),
             patch.object(learner.operation_agent, "get_action", return_value="probe"),
             patch.object(
                 learner.parameter_agent,
@@ -88,6 +88,10 @@ class RandomDependencyResponseTests(unittest.TestCase):
             learner.execute_operations()
 
         self.assertEqual(send.call_count, 2)
+        self.assertEqual(learner.time_duration, 1)
+        self.assertTrue(
+            all(call.kwargs["deadline"] == 1 for call in send.call_args_list)
+        )
         self.assertEqual(learner.responses[status_code], 2)
         self.assertEqual(learner.operation_response_counter["probe"][status_code], 2)
         self.assertEqual(add_dependency.call_count, 2 if status_code == 200 else 0)

@@ -1,0 +1,61 @@
+# Copy this file to configurations.toml and customize it before running.
+# configurations.toml is local and ignored by Git. Keep secrets in .env.
+
+[spec]
+# OpenAPI 3.0 YAML or JSON path, relative to the project root.
+location = "aratrl-openapi/market2.yaml"
+recursion_limit = 50
+strict_validation = true
+
+[llm]
+# Choose a model and OpenAI-compatible provider that support JSON mode.
+engine = "gpt-4o-mini"
+api_base = "https://api.openai.com/v1"
+creative_temperature = 1.0
+strict_temperature = 1.0
+# Set to -1 to omit the token limit and use the provider default.
+max_tokens = 20000
+# Per-network-operation timeout in seconds; SDK retries can take additional time.
+timeout_seconds = 120.0
+
+[agent]
+max_combinations = 12
+max_total_combinations = 3000
+base_samples_per_size = 200
+combination_seed = 42
+
+[agent.value]
+parallelize = true
+max_workers = 4
+
+[agents.header]
+# Enable only when testing Basic authentication with the Header Agent.
+enabled = false
+
+[cache]
+# Enable reuse after the first run; disable when changing the specification.
+use_cached_graph = false
+use_cached_table = false
+
+[q_learning]
+learning_rate = 0.1
+discount_factor = 0.9
+max_exploration = 1.0
+
+[request_generation]
+# Testing-phase budget in seconds. Setup is separate; retries do not extend it.
+time_duration = 1200
+mutation_rate = 0.2
+
+[api]
+# Uses the specification's server URL unless override_url is enabled.
+override_url = false
+host = "localhost"
+port = 8080
+# Connection/read inactivity timeout for requests to the API being tested.
+request_timeout_seconds = 30.0
+
+[custom_headers]
+# Optional static headers. Environment variables are interpolated at runtime.
+# Authorization = "Bearer ${ACCESS_TOKEN}"
+# X-API-Key = "${TARGET_API_KEY}"
