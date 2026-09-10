@@ -200,6 +200,31 @@ Edit the local copy for your API and LLM provider. `configurations.toml` is igno
 
 If you already have a `configurations.toml`, keep your settings rather than replacing it with the example. Back it up before updating an older checkout where the file was tracked, then restore it after updating. The new timeout settings have defaults, so existing configuration files continue to work without edits.
 
+### Configuration precedence
+
+Each run starts by loading `configurations.toml`. Overrides are applied in this order, from lowest to highest priority:
+
+| Priority | Source | Behavior |
+|----------|--------|----------|
+| 1 | `configurations.toml` | Supplies the base settings. |
+| 2 | Configuration wizard | Replaces only settings changed in the full or quick wizard. Optional with `--skip-wizard`. |
+| 3 | Explicit CLI options | `--spec` and `--time` replace the corresponding settings after the wizard. |
+
+Overrides merge individual settings within each section. For example, changing the model in the wizard and passing `--time 600` keeps the chosen model and changes only the testing duration. Settings omitted from the wizard or CLI retain their earlier values, including explicit `false` and `0` values where those values are valid. The testing duration must be positive.
+
+```bash
+# File defaults, with optional wizard changes
+poetry run autoresttest
+
+# File defaults plus CLI overrides; skip the wizard
+poetry run autoresttest --skip-wizard --spec specs/original/oas/spotify.yaml --time 600
+
+# Wizard choices, with the CLI duration taking final priority
+poetry run autoresttest --time 600
+```
+
+The configuration summary shows the resolved settings used by the run. The parser, agents, LLM clients, JSON repair, and API requests all receive that configuration, including the timeout settings. Wizard and CLI overrides stay in memory and do not modify `configurations.toml`. Edit the file to persist changes for future runs.
+
 Below are the relevant settings and where to find them in `configurations.toml`.
 
 #### 1. Specifying the API Specification
