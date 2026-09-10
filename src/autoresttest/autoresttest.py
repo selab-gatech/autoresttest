@@ -25,6 +25,7 @@ from autoresttest.utils import (
     get_graph_cache_path,
     get_q_table_cache_path,
     is_json_seriable,
+    param_key_to_label,
 )
 
 load_dotenv()
@@ -156,9 +157,19 @@ def output_errors(q_learning: QLearning, spec_name: str):
 
     seriable_errors = {}
     for operation_idx, unique_errors in q_learning.unique_errors.items():
-        seriable_errors[operation_idx] = [
-            error for error in unique_errors if is_json_seriable(error)
-        ]
+        seriable_errors[operation_idx] = []
+        for error in unique_errors:
+            parameters = error.get("parameters")
+            if isinstance(parameters, dict):
+                error = {
+                    **error,
+                    "parameters": {
+                        param_key_to_label(key) if isinstance(key, tuple) else key: value
+                        for key, value in parameters.items()
+                    },
+                }
+            if is_json_seriable(error):
+                seriable_errors[operation_idx].append(error)
 
     with (output_dir / "server_errors.json").open("w") as f:
         json.dump(seriable_errors, f, indent=2)
