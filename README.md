@@ -24,109 +24,6 @@ learning tables and graph edges. AutoRestTest supports any LLM from an OpenAI-AP
 > An API key from your chosen LLM provider is required. The cost per execution depends on your provider and model choice.
 > For reference, when testing an average API with ~15 operations using GPT-4o-mini, the cost was approximately $0.1.
 
-## Terminal User Interface (TUI)
-
-AutoRestTest features a modern, interactive terminal user interface built with [Rich](https://github.com/Textualize/rich) that provides:
-
-### Interactive Configuration Wizard
-
-On startup, AutoRestTest launches an interactive configuration wizard that allows you to:
-- **Select API specifications** from discovered files or enter custom paths
-- **Choose LLM providers** (OpenAI, OpenRouter, Local) with pre-configured model options
-- **Configure test duration** with convenient presets (5, 10, 20, 30, 60 minutes)
-- **Adjust Q-learning parameters** (learning rate, discount factor, exploration)
-- **Toggle caching options** for faster repeated runs
-- **Override API URLs** for local testing
-
-The wizard uses sensible defaults from `configurations.toml`, so you can simply press Enter to accept defaults or customize any setting.
-
-### Live Execution Dashboard
-
-During request generation, a real-time dashboard displays:
-
-```
-╔══════════════════════════════════════════════════════════════════════════════╗
-║ [STATUS] Request Generation                                                   ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║  ┌──────────────────────────────────────────────────────────────────────┐    ║
-║  │ Time Elapsed: 00:15:32            Time Remaining: 00:04:28           │    ║
-║  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 77.8%    │    ║
-║  └──────────────────────────────────────────────────────────────────────┘    ║
-║                                                                               ║
-║  Successfully Processed (2xx) Operations:          1,482                     ║
-║  Operation Coverage:                               85.2%                     ║
-║  Unique Server Errors (5xx):                       7                         ║
-║  Total Requests Sent:                              3,847                     ║
-║                                                                               ║
-║  Status Code Distribution                                                     ║
-║  ┌──────────────────────────────────────────────────────────────────────┐    ║
-║  │ 200: ████████████████████████████████████████████░░░░░░░░  1,482    │    ║
-║  │ 404: ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░    150    │    ║
-║  │ 500: █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      7    │    ║
-║  └──────────────────────────────────────────────────────────────────────┘    ║
-║                                                                               ║
-║  Current Operation: GET /api/users/{id}                                       ║
-║                                                                               ║
-║  [COST] Total LLM usage: $0.11 USD                                           ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-```
-
-Features include:
-- **Real-time progress tracking** with elapsed and remaining time
-- **Color-coded status codes** (green for 2xx, orange for 4xx, red for 5xx)
-- **Visual progress bars** for status code distribution
-- **Live cost estimation** based on token usage
-- **Current operation indicator** showing what's being tested
-- **Mutation counter** tracking the number of fuzzing mutations applied
-
-### Q-Table Initialization Progress
-
-During the Q-table initialization phase, the Value Agent and Header Agent (if enabled) perform LLM calls to generate test values for each API operation. A live progress display shows:
-
-```
-╭──── ⚙ Value Agent Q-Table Generation ────╮
-│                                           │
-│   ━━━━━━━━━━━━━━━━━━━━━━━───────  67.5%  │
-│                                           │
-│   Operations: 27/40  │  Elapsed: 03:45   │
-│                                           │
-│   ▶ POST /api/users                       │
-│                                           │
-╰───────────────────────────────────────────╯
-```
-
-This progress display appears for both Value Agent and Header Agent initialization, showing:
-- Visual progress bar with percentage complete
-- Operation count (completed/total)
-- Elapsed time
-- Current operation being processed
-
-### TUI Command Line Options
-
-| Option | Description |
-|--------|-------------|
-| `--skip-wizard` | Skip configuration wizard, use `configurations.toml` directly |
-| `--quick` | Quick setup wizard (essential settings only) |
-| `-s, --spec PATH` | Override specification path |
-| `-t, --time SECONDS` | Override test duration |
-| `--width N` | Set TUI display width (default: 100) |
-
-**Examples:**
-
-```bash
-# Full interactive mode (default)
-poetry run autoresttest
-
-# Quick setup - only essential settings
-poetry run autoresttest --quick
-
-# Skip wizard entirely, use config file
-poetry run autoresttest --skip-wizard
-
-# Override spec and duration via CLI
-poetry run autoresttest -s specs/original/oas/spotify.yaml -t 600
-```
-
 ## Installation
 
 We recommend using Poetry with `pyproject.toml` for dependency management and scripts. A `poetry.lock` file pins exact versions.
@@ -399,12 +296,35 @@ Add these options to the existing sections in your local configuration. During t
 
 ## Execution
 
-Run the script using Poetry, after following the installation instructions:
-```
+After following the installation instructions, run AutoRestTest with the configuration wizard:
+
+```bash
 poetry run autoresttest
 ```
 
-To indicate the specification for execution, set `[spec].location` in `configurations.toml`. This path must be relative to the project root.
+Set `[spec].location` in `configurations.toml` or use `--spec` to select the specification. Paths are relative to the project root.
+
+### Command Line Options
+
+| Option | Description |
+|--------|-------------|
+| `-h, --help` | Show available options and exit |
+| `--skip-wizard` | Skip the configuration wizard and use `configurations.toml` directly |
+| `--quick` | Run the quick setup wizard (essential settings only) |
+| `-s, --spec PATH` | Override the specification path |
+| `-t, --time SECONDS` | Override the test duration in seconds |
+| `--width N` | Set the terminal display width (default: 100) |
+
+```bash
+# Quick setup
+poetry run autoresttest --quick
+
+# Use the configuration file without the wizard
+poetry run autoresttest --skip-wizard
+
+# Override the specification and duration from the configuration file
+poetry run autoresttest --skip-wizard -s specs/original/oas/spotify.yaml -t 600
+```
 
 ### Docker Execution
 
@@ -419,15 +339,6 @@ docker run -it autoresttest
 Ensure that `configurations.toml` is configured correctly before executing the software.
 
 ## Results
-
-Throughout AutoRestTest's execution, the TUI provides real-time visual feedback including:
-- **Phase indicators** showing current execution stage (Graph Construction, Q-Table Initialization, Request Generation)
-- **Live dashboard** during request generation with time tracking, status code distribution, and cost estimation
-- **Final report** with summary statistics, success rates, and token usage
-- **Smart status code grouping** - automatically groups by category (2xx, 4xx, 5xx) when there are many different codes
-- **Color-coded time indicators** - remaining time changes color based on percentage remaining (red < 5%, yellow < 20%) 
-
-#### Report Generation and Data Files
 
 AutoRestTest will generate a series of files in the `data` directory within the root folder for easy access to execution results. 
 The following are the files generated:

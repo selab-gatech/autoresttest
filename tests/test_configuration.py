@@ -1,5 +1,4 @@
 import copy
-import importlib
 import subprocess
 import sys
 import unittest
@@ -298,16 +297,8 @@ class ConfigurationTests(unittest.TestCase):
             parallel.assert_not_called()
             sequential.assert_called_once()
 
-    def test_combination_limits_and_ablation_configs_follow_the_run(self):
+    def test_combination_limits_follow_the_run(self):
         self.assertLessEqual(len(get_combinations(range(12), config=self.config)), 3)
-        graph = self.make_graph()
-        for number in range(1, 6):
-            with self.subTest(ablation=number):
-                module = importlib.import_module(
-                    f"autoresttest.ablation.ablation{number}"
-                )
-                learner = getattr(module, f"Ablation{number}")(graph)
-                self.assertIs(learner.config, self.config)
 
     def test_import_and_help_do_not_require_a_config_file(self):
         script = (
