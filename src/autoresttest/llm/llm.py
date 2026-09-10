@@ -1,6 +1,5 @@
 import os
 import threading
-import time
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
@@ -48,7 +47,12 @@ class LanguageModel:
             raise ValueError(
                 "API key is required for OpenAI language model, found None or empty string."
             )
-        self.client = OpenAI(api_key=self.api_key, base_url=CONFIG.llm_api_base)
+        self.client = OpenAI(
+            api_key=self.api_key,
+            base_url=CONFIG.llm_api_base,
+            timeout=CONFIG.llm.timeout_seconds,
+            max_retries=2,
+        )
         self.engine = engine
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -91,26 +95,11 @@ class LanguageModel:
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
 
-        max_retries = 3
-        base_delay = 1.0
-
-        for attempt in range(max_retries):
-            try:
-                response = self.client.chat.completions.create(**kwargs)
-                break
-            except Exception:
-                if attempt < max_retries - 1:
-                    delay = base_delay * (2**attempt)
-                    # print(
-                    #     f"[LLM] API call failed (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}"
-                    # )
-                    # print(f"[LLM] Retrying in {delay}s...")
-                    time.sleep(delay)
-                else:
-                    # print(
-                    #     f"[LLM] API call failed after {max_retries} attempts: {type(e).__name__}: {e}"
-                    # )
-                    return ""
+        # The SDK owns retries; wrapping it in another retry loop multiplies attempts.
+        try:
+            response = self.client.chat.completions.create(**kwargs)
+        except Exception:
+            return ""
 
         input_tokens = 0
         output_tokens = 0

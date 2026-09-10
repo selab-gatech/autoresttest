@@ -504,6 +504,7 @@ class QLearning:
         body,
         header,
         specific_method=None,
+        deadline: float | None = None,
     ):
         endpoint_path = operation_properties.endpoint_path
         http_method = (
@@ -541,6 +542,7 @@ class QLearning:
                 header=merged_headers,
                 cookies=cookie_params,
                 accept=accept_header,
+                deadline=deadline,
             )
             return response
         except requests.exceptions.RequestException as err:
@@ -937,7 +939,8 @@ class QLearning:
         )
 
     def execute_operations(self):
-        start_time = time.time()
+        start_time = time.monotonic()
+        deadline = start_time + self.time_duration
 
         complete_body_mappings = self.determine_complete_body_mappings()
 
@@ -949,7 +952,7 @@ class QLearning:
             else 0
         )
 
-        while time.time() - start_time < self.time_duration:
+        while time.monotonic() < deadline:
             self.epsilon_decay(epsilon_decay_rate)
 
             operation_id = self.operation_agent.get_action()
@@ -1274,11 +1277,16 @@ class QLearning:
                         self.mutation_count += 1
 
                 response = self.send_operation(
-                    operation_props, parameters, body, header, specific_method
+                    operation_props,
+                    parameters,
+                    body,
+                    header,
+                    specific_method,
+                    deadline=deadline,
                 )
             else:
                 response = self.send_operation(
-                    operation_props, parameters, body, header
+                    operation_props, parameters, body, header, deadline=deadline
                 )
 
             # If invalid response do not process
