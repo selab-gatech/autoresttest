@@ -17,7 +17,7 @@ import sys
 root_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.append(root_directory)
 
-from autoresttest.config import get_config
+from autoresttest.config import Config, get_config
 from autoresttest.graph.generate_graph import OperationGraph
 from autoresttest.specification import SpecificationParser
 from autoresttest.models import OperationProperties
@@ -30,13 +30,13 @@ from autoresttest.utils import construct_db_dir, construct_basic_token, get_body
 from autoresttest.llm import identify_generator, randomize_string, random_generator, randomize_object
 
 
-CONFIG = get_config()
 
 
 class Ablation1:
     def __init__(self, operation_graph, alpha=0.1, gamma=0.9, epsilon=0.3, time_duration=600, mutation_rate=0.3):
         self.q_table = {}
         self.operation_graph: OperationGraph = operation_graph
+        self.config = operation_graph.config
         self.api_url = operation_graph.request_generator.api_url
         self.alpha = alpha
         self.gamma = gamma
@@ -233,7 +233,7 @@ class Ablation1:
 
         if mutate_token:
             random_token_params = {"username": randomize_string(), "password": randomize_string()}
-            if CONFIG.enable_header_agent and header and random.random() < 0.5:
+            if self.config.enable_header_agent and header and random.random() < 0.5:
                 header = None
             else:
                 header = {"Authorization": construct_basic_token(random_token_params)}
@@ -298,6 +298,7 @@ class Ablation1:
                 params=processed_parameters,
                 body=body,
                 header=header,
+                config=self.config,
             )
             return response
         except requests.exceptions.RequestException as err:
@@ -537,7 +538,7 @@ class Ablation1:
 
         elapsed_time = time.time() - start_time
 
-        if CONFIG.enable_header_agent:
+        if self.config.enable_header_agent:
             agent_options = ["PARAMETER & BODY", "DATA_SOURCE", "VALUE", "DEPENDENCY", "HEADER", "NONE", "ALL"]
         else:
             agent_options = ["PARAMETER & BODY", "DATA_SOURCE", "VALUE", "DEPENDENCY", "NONE", "ALL"]
@@ -588,7 +589,7 @@ class Ablation1:
             select_params = self.parameter_agent.get_action(operation_id)
 
             # Determine header
-            if CONFIG.enable_header_agent:
+            if self.config.enable_header_agent:
                 select_header = self.header_agent.get_action(operation_id)
             else:
                 select_header = None
@@ -719,7 +720,7 @@ class Ablation1:
                 next_Q_data = self.data_source_agent.get_Q_next(operation_id)
 
                 curr_Q_header, next_Q_header = 0, 0
-                if CONFIG.enable_header_agent:
+                if self.config.enable_header_agent:
                     curr_Q_header += self.header_agent.get_Q_curr(operation_id, select_header)
                     next_Q_header += self.header_agent.get_Q_next(operation_id)
 
@@ -769,7 +770,7 @@ class Ablation1:
 
                 self.data_source_agent.update_Q_item(operation_id, data_source, td_error)
 
-                if CONFIG.enable_header_agent:
+                if self.config.enable_header_agent:
                     self.header_agent.update_Q_item(operation_id, select_header, td_error)
 
                 elif data_source == "DEPENDENCY" and (dependency_type == "EXPLORE" or dependency_type == "BEST"):
@@ -874,18 +875,18 @@ class Ablation1:
     def run(self):
         self.execute_operations()
 
-def init_graph_ablation_1(spec_name: str, spec_path, embedding_model) -> OperationGraph:
-    spec_parser = SpecificationParser(spec_path=spec_path, spec_name=spec_name)
+def init_graph_ablation_1(spec_name: str, spec_path, embedding_model, config: Config | None = None) -> OperationGraph:
+    spec_parser = SpecificationParser(spec_path=spec_path, spec_name=spec_name, config=config)
     api_url = get_api_url(spec_parser, local_test=True)
     operation_graph = OperationGraph(spec_path=spec_path, spec_name=spec_name, spec_parser=spec_parser, embedding_model=embedding_model)
     request_generator = RequestGenerator(operation_graph=operation_graph, api_url=api_url, is_naive=False)
     operation_graph.assign_request_generator(request_generator)
     return operation_graph
 
-def generate_graph_ablation_1(spec_dir, spec_name, embedding_model):
+def generate_graph_ablation_1(spec_dir, spec_name, embedding_model, config: Config | None = None):
     print("Generating graph!")
     spec_path = f"{spec_dir}{spec_name}.yaml"
-    operation_graph = init_graph_ablation_1(spec_name, spec_path, embedding_model)
+    operation_graph = init_graph_ablation_1(spec_name, spec_path, embedding_model, config=config)
     operation_graph.create_graph()
     print("Graph initialized!")
     return operation_graph
@@ -894,11 +895,11 @@ def perform_q_learning_ablation_1(operation_graph: OperationGraph, spec_name, du
     print("Initializing agents!")
     q_learning = Ablation1(
         operation_graph,
-        alpha=CONFIG.q_learning.learning_rate,
-        gamma=CONFIG.q_learning.discount_factor,
-        epsilon=CONFIG.q_learning.max_exploration,
+        alpha=operation_graph.config.q_learning.learning_rate,
+        gamma=operation_graph.config.q_learning.discount_factor,
+        epsilon=operation_graph.config.q_learning.max_exploration,
         time_duration=duration,
-        mutation_rate=CONFIG.request_generation.mutation_rate,
+        mutation_rate=operation_graph.config.request_generation.mutation_rate,
     )
     q_learning.parameter_agent.initialize_q_table()
     q_learning.operation_agent.initialize_q_table()
@@ -911,7 +912,7 @@ def perform_q_learning_ablation_1(operation_graph: OperationGraph, spec_name, du
     print("Q-learning complete!")
     return q_learning
 
-def execute_ablation_1(spec_dir, spec_name, duration):
+def execute_ablation_1(spec_dir, spec_name, duration, config: Config | None = None):
     """
     Perform ablation study 1: Remove LLM data source.
     Note: Ablation only works with yaml input files and with the header agent disabled in configurations.
@@ -920,8 +921,9 @@ def execute_ablation_1(spec_dir, spec_name, duration):
     This is meant as a benchmark.
     :return:
     """
+    config = config if config is not None else get_config()
     embedding_model = EmbeddingModel()
-    operation_graph = generate_graph_ablation_1(spec_dir, spec_name, embedding_model)
+    operation_graph = generate_graph_ablation_1(spec_dir, spec_name, embedding_model, config=config)
     q_learning = perform_q_learning_ablation_1(operation_graph, spec_name, duration)
 
 if __name__ == "__main__":

@@ -69,12 +69,13 @@ class QLearningConfig(BaseModel):
 
 
 class RequestGenerationConfig(BaseModel):
-    time_duration: int
+    time_duration: int = Field(gt=0)
     mutation_rate: float
 
 
 class ApiConfig(BaseModel):
     """API URL configuration. Override the spec URL with custom host/port."""
+
     override_url: bool = False
     host: str = "localhost"
     port: int = 8080
@@ -184,20 +185,44 @@ class Config(BaseModel):
         return f"http://{self.api.host}:{self.api.port}/"
 
 
-def _load_raw_config() -> Dict[str, Any]:
-    if not CONFIG_PATH.exists():
+def _load_raw_config(path: Path | str | None = None) -> Dict[str, Any]:
+    config_path = Path(path) if path is not None else CONFIG_PATH
+    if not config_path.exists():
         raise FileNotFoundError(
-            f"Configuration file not found: {CONFIG_PATH}. "
+            f"Configuration file not found: {config_path}. "
             "Copy configurations.toml.example to configurations.toml and edit it before running."
         )
-    with CONFIG_PATH.open("rb") as fh:
+    with config_path.open("rb") as fh:
         return tomllib.load(fh)
+
+
+def load_config(path: Path | str | None = None) -> Config:
+    """Load file defaults for a new run, without reusing a previous run's values."""
+    return Config.model_validate(_load_raw_config(path))
 
 
 @lru_cache(maxsize=1)
 def get_config() -> Config:
-    """Return the cached configuration values."""
-    return Config.model_validate(_load_raw_config())
+    """Return cached file defaults for standalone callers without an explicit config."""
+    return load_config()
+
+
+def apply_config_overrides(
+    overrides: Dict[str, Any], config: Config | None = None
+) -> Config:
+    """Merge only supplied fields into a config, validate, and leave inputs unchanged."""
+
+    def deep_merge(base: Dict, override: Dict) -> Dict:
+        result = base.copy()
+        for key, value in override.items():
+            if isinstance(result.get(key), dict) and isinstance(value, dict):
+                result[key] = deep_merge(result[key], value)
+            else:
+                result[key] = value
+        return result
+
+    base = config if config is not None else get_config()
+    return Config.model_validate(deep_merge(base.model_dump(), overrides))
 
 
 __all__ = [
@@ -205,4 +230,6 @@ __all__ = [
     "CONFIG_PATH",
     "PROJECT_ROOT",
     "get_config",
+    "load_config",
+    "apply_config_overrides",
 ]

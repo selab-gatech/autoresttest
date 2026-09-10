@@ -7,7 +7,7 @@ from typing import Optional, Union
 
 from dotenv import load_dotenv
 
-from autoresttest.config import get_config
+from autoresttest.config import apply_config_overrides, load_config
 from autoresttest.config.config import Config
 from autoresttest.graph import RequestGenerator
 from autoresttest.graph.generate_graph import OperationGraph
@@ -16,7 +16,6 @@ from autoresttest.marl import QLearning
 from autoresttest.models import to_dict_helper
 from autoresttest.specification import SpecificationParser
 from autoresttest.tui import ConfigWizard, InitializationProgressDisplay, LiveDisplay, TUIDisplay
-from autoresttest.tui.config_wizard import apply_config_overrides
 from autoresttest.tui.themes import DEFAULT_THEME
 from autoresttest.utils import (
     EmbeddingModel,
@@ -257,7 +256,9 @@ class AutoRestTest:
         embedding_model: EmbeddingModel,
     ) -> OperationGraph:
         self.tui.print_step(f"Parsing OpenAPI specification: {spec_path}...", "progress")
-        spec_parser = SpecificationParser(spec_path=str(spec_path), spec_name=spec_name)
+        spec_parser = SpecificationParser(
+            spec_path=str(spec_path), spec_name=spec_name, config=self.config
+        )
         self.tui.print_step("Specification parsed successfully!", "success")
 
         if self.config.api.override_url:
@@ -518,31 +519,24 @@ def main():
     tui.clear()
     tui.print_banner()
 
-    # Get configuration
-    if args.skip_wizard:
-        config = get_config()
-    else:
-        wizard = ConfigWizard(width=args.width)
+    # Resolve one configuration: file defaults, then wizard, then explicit CLI fields.
+    config = load_config()
+    if not args.skip_wizard:
+        wizard = ConfigWizard(width=args.width, config=config)
         overrides = wizard.run(quick_mode=args.quick)
 
         if overrides is None:
             # User cancelled
             sys.exit(0)
-        elif overrides:
-            config = apply_config_overrides(overrides)
-        else:
-            config = get_config()
+        config = apply_config_overrides(overrides, config)
 
     # Apply CLI overrides
-    if args.spec or args.time:
-        from autoresttest.config.config import _load_raw_config
-
-        raw_config = _load_raw_config()
-        if args.spec:
-            raw_config["spec"]["location"] = args.spec
-        if args.time:
-            raw_config["request_generation"]["time_duration"] = args.time
-        config = Config.model_validate(raw_config)
+    cli_overrides = {}
+    if args.spec is not None:
+        cli_overrides["spec"] = {"location": args.spec}
+    if args.time is not None:
+        cli_overrides["request_generation"] = {"time_duration": args.time}
+    config = apply_config_overrides(cli_overrides, config)
 
     # Display configuration summary
     config_summary = {

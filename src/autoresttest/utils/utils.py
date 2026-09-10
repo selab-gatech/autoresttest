@@ -14,14 +14,13 @@ from dotenv import load_dotenv
 from gensim.downloader import load
 from gensim.models import KeyedVectors
 
-from autoresttest.config import get_config
+from autoresttest.config import Config, get_config
 from autoresttest.models import ParameterKey, ParameterProperties, SchemaProperties
 from autoresttest.prompts.generator_prompts import FIX_JSON_OBJ
 from autoresttest.prompts.system_prompts import FIX_JSON_SYSTEM_MESSAGE
 from autoresttest.specification import SpecificationParser
 
 load_dotenv()
-CONFIG = get_config()
 
 CACHE_ROOT = Path(__file__).resolve().parent.parents[2] / "cache"
 Q_TABLE_CACHE_DIR = CACHE_ROOT / "q_tables"
@@ -73,16 +72,20 @@ def get_param_combinations(
     operation_parameters: Dict[ParameterKey, ParameterProperties],
     required_params: Optional[Set[ParameterKey]] = None,
     seed: Optional[str] = None,
+    config: Config | None = None,
 ) -> List[Tuple[ParameterKey, ...]]:
     param_list = get_params(operation_parameters)
-    return get_combinations(param_list, required=required_params, seed=seed)
+    return get_combinations(
+        param_list, required=required_params, seed=seed, config=config
+    )
 
 
 def get_body_combinations(
     operation_body: Dict[str, SchemaProperties],
+    config: Config | None = None,
 ) -> Dict[str, List[Tuple[str]]]:
     return {
-        k: get_combinations(v)
+        k: get_combinations(v, config=config)
         for k, v in get_request_body_params(operation_body).items()
     }
 
@@ -91,9 +94,13 @@ def get_body_object_combinations(
     body_schema: SchemaProperties,
     required_body_params: Optional[Set[str]] = None,
     seed: Optional[str] = None,
+    config: Config | None = None,
 ) -> List[Tuple[str, ...]]:
     return get_combinations(
-        get_body_params(body_schema), required=required_body_params, seed=seed
+        get_body_params(body_schema),
+        required=required_body_params,
+        seed=seed,
+        config=config,
     )
 
 
@@ -101,6 +108,7 @@ def get_combinations(
     arr: Iterable[Any],
     required: Optional[Set[Any]] = None,
     seed: Optional[str] = None,
+    config: Config | None = None,
 ) -> List[Tuple[Any, ...]]:
     """
     Generate bounded parameter combinations with depth-weighted sampling.
@@ -122,16 +130,17 @@ def get_combinations(
     optional = [p for p in arr if p not in required]
     required_tuple = tuple(p for p in arr if p in required)  # Preserve order
 
-    max_optional_size = CONFIG.max_combinations
-    max_total = CONFIG.max_total_combinations
-    base_samples = CONFIG.base_samples_per_size
+    config = config if config is not None else get_config()
+    max_optional_size = config.max_combinations
+    max_total = config.max_total_combinations
+    base_samples = config.base_samples_per_size
 
     # Seeded RNG for reproducibility
     if seed:
         seed_int = int(hashlib.md5(seed.encode()).hexdigest(), 16) % (2**32)
         rng = random.Random(seed_int)
     else:
-        rng = random.Random(CONFIG.combination_seed)
+        rng = random.Random(config.combination_seed)
 
     combinations: Set[Tuple[Any, ...]] = set()
     n_optional = len(optional)
@@ -346,10 +355,11 @@ def compose_json_fix_prompt(invalid_json_str: str):
     return prompt
 
 
-def attempt_fix_json(invalid_json_str: str):
+def attempt_fix_json(invalid_json_str: str, config: Config | None = None):
     from autoresttest.llm import LanguageModel
 
-    language_model = LanguageModel(temperature=CONFIG.strict_temperature)
+    config = config if config is not None else get_config()
+    language_model = LanguageModel(temperature=config.strict_temperature, config=config)
     json_prompt = compose_json_fix_prompt(invalid_json_str)
     fixed_json = language_model.query(
         user_message=json_prompt, system_message=FIX_JSON_SYSTEM_MESSAGE, json_mode=True
@@ -510,6 +520,7 @@ def dispatch_request(
     accept: str | None = None,
     timeout_seconds: float | None = None,
     deadline: float | None = None,
+    config: Config | None = None,
 ):
     """
     Send a request with sensible handling for the provided body and MIME type key (if any).
@@ -522,7 +533,8 @@ def dispatch_request(
     if accept:
         headers.setdefault("Accept", accept)
     if timeout_seconds is None:
-        timeout_seconds = get_config().api.request_timeout_seconds
+        config = config if config is not None else get_config()
+        timeout_seconds = config.api.request_timeout_seconds
 
     response = None
     for attempt in range(max_retries + 1):

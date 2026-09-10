@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 import numpy as np
 import requests
 
-from autoresttest.config import get_config
 
 if TYPE_CHECKING:
     from autoresttest.tui import LiveDisplay, TUIDisplay
@@ -41,7 +40,6 @@ from autoresttest.utils import (
     split_parameter_values,
 )
 
-CONFIG = get_config()
 
 
 class QLearning:
@@ -57,6 +55,7 @@ class QLearning:
     ) -> None:
         self.q_table: dict[str, Any] = {}
         self.operation_graph: OperationGraph = operation_graph
+        self.config = operation_graph.config
         assert operation_graph.request_generator is not None, (
             "request_generator must be set"
         )
@@ -393,7 +392,7 @@ class QLearning:
                 "username": randomize_string(),
                 "password": randomize_string(),
             }
-            if CONFIG.enable_header_agent and header and random.random() < 0.5:
+            if self.config.enable_header_agent and header and random.random() < 0.5:
                 header = None
             else:
                 header = {"Authorization": construct_basic_token(random_token_params)}
@@ -524,7 +523,7 @@ class QLearning:
             endpoint_path = endpoint_path.replace("{" + name + "}", str(value))
 
         merged_headers = header_params.copy()
-        merged_headers.update(CONFIG.static_headers)  # Add custom headers from config
+        merged_headers.update(self.config.static_headers)  # Add custom headers from config
         if header:
             merged_headers.update(header)
 
@@ -542,6 +541,7 @@ class QLearning:
                 header=merged_headers,
                 cookies=cookie_params,
                 accept=accept_header,
+                config=self.config,
                 deadline=deadline,
             )
             return response
@@ -848,7 +848,7 @@ class QLearning:
 
         elapsed_time = time.time() - start_time
 
-        if CONFIG.enable_header_agent:
+        if self.config.enable_header_agent:
             agent_options = [
                 "PARAMETER & BODY",
                 "DATA_SOURCE",
@@ -962,7 +962,7 @@ class QLearning:
             select_params = self.parameter_agent.get_action(operation_id)
 
             # Determine header
-            if CONFIG.enable_header_agent:
+            if self.config.enable_header_agent:
                 select_header = self.header_agent.get_action(operation_id)
             else:
                 select_header = None
@@ -1321,7 +1321,7 @@ class QLearning:
                 next_Q_data = self.data_source_agent.get_Q_next(operation_id)
 
                 curr_Q_header, next_Q_header = 0, 0
-                if CONFIG.enable_header_agent:
+                if self.config.enable_header_agent:
                     curr_Q_header += self.header_agent.get_Q_curr(
                         operation_id, select_header
                     )
@@ -1482,7 +1482,7 @@ class QLearning:
                     operation_id, data_source, td_error
                 )
 
-                if CONFIG.enable_header_agent:
+                if self.config.enable_header_agent:
                     self.header_agent.update_Q_item(
                         operation_id, select_header, td_error
                     )

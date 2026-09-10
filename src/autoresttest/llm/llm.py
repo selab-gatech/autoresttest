@@ -5,11 +5,10 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from autoresttest.config import get_config
+from autoresttest.config import Config, get_config
 from autoresttest.prompts.system_prompts import DEFAULT_SYSTEM_MESSAGE
 from autoresttest.utils import encode_dictionary
 
-CONFIG = get_config()
 
 load_dotenv()
 
@@ -38,10 +37,12 @@ class LanguageModel:
 
     def __init__(
         self,
-        engine=CONFIG.openai_llm_engine,
-        temperature=CONFIG.creative_temperature,
-        max_tokens=CONFIG.llm_max_tokens,
+        engine=None,
+        temperature=None,
+        max_tokens=None,
+        config: Config | None = None,
     ):
+        self.config = config if config is not None else get_config()
         self.api_key = os.getenv("API_KEY")
         if self.api_key is None or self.api_key.strip() == "":
             raise ValueError(
@@ -49,13 +50,17 @@ class LanguageModel:
             )
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url=CONFIG.llm_api_base,
-            timeout=CONFIG.llm.timeout_seconds,
+            base_url=self.config.llm_api_base,
+            timeout=self.config.llm.timeout_seconds,
             max_retries=2,
         )
-        self.engine = engine
-        self.temperature = temperature
-        self.max_tokens = max_tokens
+        self.engine = engine if engine is not None else self.config.openai_llm_engine
+        self.temperature = (
+            temperature if temperature is not None else self.config.creative_temperature
+        )
+        self.max_tokens = (
+            max_tokens if max_tokens is not None else self.config.llm_max_tokens
+        )
 
     def _generate_cache_key(self, user_message, system_message, json_mode):
         key_data = {
@@ -63,6 +68,7 @@ class LanguageModel:
             "system_message": system_message,
             "json_mode": json_mode,
             "engine": self.engine,
+            "api_base": self.config.llm_api_base,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
         }

@@ -6,7 +6,6 @@ import numpy as np
 
 from .base_agent import BaseAgent
 
-from autoresttest.config import get_config
 from autoresttest.graph import OperationGraph
 from autoresttest.models import ParameterKey, ValueAction
 
@@ -38,7 +37,7 @@ class ValueAgent(BaseAgent):
     def initialize_q_table(
         self, progress_callback: Optional[ProgressCallback] = None
     ) -> None:
-        config = get_config()
+        config = self.operation_graph.config
         request_generator = self.operation_graph.request_generator
 
         if request_generator is None:

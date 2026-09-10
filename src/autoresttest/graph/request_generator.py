@@ -14,7 +14,7 @@ import requests
 import pickle
 import os
 
-from autoresttest.config import get_config
+from autoresttest.config import Config
 from autoresttest.models import (
     OperationProperties,
     ParameterKey,
@@ -41,7 +41,6 @@ from autoresttest.llm import NaiveValueGenerator, SmartValueGenerator
 if TYPE_CHECKING:
     from .generate_graph import OperationGraph, OperationNode, OperationEdge
 
-CONFIG = get_config()
 
 
 @dataclass
@@ -54,6 +53,7 @@ class StatusCode:
 class RequestGenerator:
     def __init__(self, operation_graph: "OperationGraph", api_url: str, is_naive=True):
         self.operation_graph: "OperationGraph" = operation_graph
+        self.config = operation_graph.config
         self.api_url = api_url
         self.status_codes: Dict[int, StatusCode] = (
             {}
@@ -82,6 +82,7 @@ class RequestGenerator:
     def generate_smart_values(
         operation_properties: OperationProperties,
         requirements: RequestRequirements | None = None,
+        config: Config | None = None,
     ):
         """
         Generate smart values for parameters and request body using LLMs
@@ -90,7 +91,9 @@ class RequestGenerator:
         :return: a tuple of the generated parameters and request body
         """
         value_generator = SmartValueGenerator(
-            operation_properties=operation_properties, requirements=requirements
+            operation_properties=operation_properties,
+            requirements=requirements,
+            config=config,
         )
         return (
             value_generator.generate_parameters(),
@@ -114,7 +117,9 @@ class RequestGenerator:
             )
         else:
             parameters, request_body = self.generate_smart_values(
-                operation_properties=operation_properties, requirements=requirements
+                operation_properties=operation_properties,
+                requirements=requirements,
+                config=self.config,
             )
 
         return RequestData(
@@ -136,7 +141,8 @@ class RequestGenerator:
             value_generator = SmartValueGenerator(
                 operation_properties=request_data.operation_properties,
                 requirements=requirements,
-                temperature=CONFIG.strict_temperature,
+                temperature=self.config.strict_temperature,
+                config=self.config,
             )
             parameters, request_body = value_generator.generate_retry_parameters(
                 request_data, response
@@ -196,7 +202,9 @@ class RequestGenerator:
 
     def get_auth_info(self, operation_node: "OperationNode", auth_attempts: int = 3):
         operation_properties = operation_node.operation_properties
-        value_generator = SmartValueGenerator(operation_properties=operation_properties)
+        value_generator = SmartValueGenerator(
+            operation_properties=operation_properties, config=self.config
+        )
 
         auth_parameters = value_generator.determine_auth_params()
         # print(f"Auth parameters for operation {operation_node.operation_id}: {auth_parameters}")
@@ -234,7 +242,9 @@ class RequestGenerator:
         is_body=False,
     ):
         param_q_table = {"params": {}, "body": {}}
-        params = get_param_combinations(operation_node.operation_properties.parameters)
+        params = get_param_combinations(
+            operation_node.operation_properties.parameters, config=self.config
+        )
         if not is_body:
             for param in params:
                 # param is a tuple of ParameterKey tuples; p[0] extracts the parameter name
@@ -251,7 +261,8 @@ class RequestGenerator:
         body_properties: List = []
         if select_mime and operation_node.operation_properties.request_body:
             body_properties = get_body_object_combinations(
-                operation_node.operation_properties.request_body[select_mime]
+                operation_node.operation_properties.request_body[select_mime],
+                config=self.config,
             )
         if is_body:
             for body in body_properties:
@@ -261,7 +272,7 @@ class RequestGenerator:
             param_q_table["body"] = {key: 0 for key in body_properties}
 
         value_generator = SmartValueGenerator(
-            operation_properties=operation_node.operation_properties
+            operation_properties=operation_node.operation_properties, config=self.config
         )
         failed_responses = []
         for i in range(3):
@@ -426,7 +437,7 @@ class RequestGenerator:
 
             # Merge custom headers from config
             merged_headers = header_params.copy()
-            merged_headers.update(get_config().static_headers)
+            merged_headers.update(self.config.static_headers)
 
             accept_header = get_accept_header(
                 request_data.operation_properties.responses
@@ -439,6 +450,7 @@ class RequestGenerator:
                 header=merged_headers,
                 cookies=cookie_params,
                 accept=accept_header,
+                config=self.config,
             )
             if response is not None:
                 if not response.ok and retry_nums < permitted_retries and allow_retry:
@@ -564,7 +576,7 @@ class RequestGenerator:
                     possible_responses.append(response)
 
             value_generator = SmartValueGenerator(
-                operation_properties=curr_node.operation_properties
+                operation_properties=curr_node.operation_properties, config=self.config
             )
             if possible_responses:
                 parameters, request_body = (
@@ -636,7 +648,8 @@ class RequestGenerator:
                         possible_responses.append(response)
 
                 value_generator = SmartValueGenerator(
-                    operation_properties=operation_node.operation_properties
+                    operation_properties=operation_node.operation_properties,
+                    config=self.config,
                 )
                 if possible_responses:
                     parameters, request_body = (

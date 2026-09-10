@@ -48,6 +48,7 @@ class ParameterAgent(BaseAgent):
                 operation_node.operation_properties.parameters,
                 required_params=required,
                 seed=operation_id,
+                config=self.operation_graph.config,
             )
             self.q_table[operation_id]["params"] = {param: 0.0 for param in params}
             mimes = (
