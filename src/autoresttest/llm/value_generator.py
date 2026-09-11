@@ -663,7 +663,7 @@ class SmartValueGenerator:
                 request_body[mime_type] = validated_request_body
         return request_body  # Returns {} if all mime types failed
 
-    def determine_auth_params(self):
+    def determine_auth_params(self) -> Optional[Dict[str, Any]]:
         """
         Determines if the operation consists of any authentication information sent as parameters in either the query or the request body
         :return:
