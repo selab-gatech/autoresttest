@@ -469,7 +469,7 @@ class AutoRestTest:
         unique_errors = sum(len(errs) for errs in q_learning.unique_errors.values())
         total_requests = sum(q_learning.responses.values())
 
-        title = spec_parser.get_api_title() if spec_parser.get_api_title() else "API"
+        title = spec_parser.get_api_title() or "API"
 
         self.tui.print_final_report(
             title=title,

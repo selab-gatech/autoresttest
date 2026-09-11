@@ -120,7 +120,8 @@ class QLearning:
         if not param_type:
             return None
         avail_types = ["integer", "number", "string", "boolean", "array", "object"]
-        avail_types.remove(param_type)
+        if param_type in avail_types:
+            avail_types.remove(param_type)
         return identify_generator(random.choice(avail_types))()
 
     def get_boundary_value(self, param_type: str | None) -> Any:
@@ -698,11 +699,13 @@ class QLearning:
                             )
 
     def _construct_body_property(self, body_property, unconstructed_body):
+        if body_property is None:
+            return None
         if body_property.properties or body_property.type == "object":
             return {
                 prop: val
                 for prop, val in unconstructed_body.items()
-                if prop in body_property.properties
+                if prop in (body_property.properties or {})
             }
         elif body_property.items or body_property.type == "array":
             return [
@@ -1534,15 +1537,22 @@ class QLearning:
                     response.content
                     and self.successful_responses[operation_id] is not None
                 ):
+                    deconstructed_response: Dict[str, List] = {}
+                    response_content_valid = False
                     try:
                         response_content = json.loads(response.content)
-                    except json.JSONDecodeError:
+                        self._deconstruct_response(
+                            response_content, deconstructed_response
+                        )
+                    except (ValueError, RecursionError):
+                        # Invalid encodings, oversized integers, and excessive nesting
+                        # must not terminate testing or become learned response values.
                         print("Error decoding JSON response content")
                         print("Response content: ", response.content)
                         response_content = None
-
-                    deconstructed_response: Dict[str, List] = {}
-                    self._deconstruct_response(response_content, deconstructed_response)
+                        deconstructed_response.clear()
+                    else:
+                        response_content_valid = True
 
                     if deconstructed_response:
                         for (
@@ -1573,7 +1583,7 @@ class QLearning:
                                 ):
                                     self.data_source_agent.initialize_dependency_source()
 
-                    else:
+                    elif response_content_valid:
                         if operation_id not in self.successful_primitives:
                             self.successful_primitives[operation_id] = []
                         if isinstance(response_content, list):

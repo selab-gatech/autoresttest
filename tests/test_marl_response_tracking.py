@@ -1,21 +1,23 @@
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import requests
 
 from autoresttest.agents.parameter_agent import ParameterAction
-from autoresttest.config import apply_config_overrides
+from autoresttest.config import apply_config_overrides, load_config
 from autoresttest.marl.marl import QLearning
 from autoresttest.models import (
     OperationProperties,
     ParameterProperties,
+    ResponseProperties,
     SchemaProperties,
 )
 
 
 class RandomDependencyResponseTests(unittest.TestCase):
-    def run_requests(self, status_code):
+    def run_requests(self, status_code, content=b""):
         parameter = ("id", "query")
         operation = OperationProperties(
             operation_id="probe",
@@ -29,9 +31,24 @@ class RandomDependencyResponseTests(unittest.TestCase):
                     schema=SchemaProperties(type="integer"),
                 )
             },
+            responses={
+                "200": ResponseProperties(
+                    content={
+                        "application/json": SchemaProperties(
+                            type="object",
+                            properties={"id": SchemaProperties(type="integer")},
+                        )
+                    }
+                )
+            },
         )
         graph = SimpleNamespace(
-            config=apply_config_overrides({"agents": {"header": {"enabled": False}}}),
+            config=apply_config_overrides(
+                {"agents": {"header": {"enabled": False}}},
+                load_config(
+                    Path(__file__).resolve().parents[1] / "configurations.toml.example"
+                ),
+            ),
             request_generator=SimpleNamespace(api_url="http://example.invalid"),
             operation_nodes={
                 "probe": SimpleNamespace(
@@ -61,7 +78,7 @@ class RandomDependencyResponseTests(unittest.TestCase):
         }
         response = requests.Response()
         response.status_code = status_code
-        response._content = b""
+        response._content = content
         with (
             patch("autoresttest.marl.marl.time.monotonic", side_effect=[0, 0, 0, 2]),
             patch.object(learner.operation_agent, "get_action", return_value="probe"),
@@ -118,3 +135,32 @@ class RandomDependencyResponseTests(unittest.TestCase):
         learner = self.run_requests(200)
         self.assertEqual(learner.errors, {})
         self.assertEqual(learner.successful_parameters["probe"][("id", "query")], [42])
+
+    def test_invalid_json_responses_do_not_stop_testing_or_teach_values(self):
+        bodies = [
+            b'{"value":"' + b"a" * 16 + b'\x9b"}',
+            b"<html>OK</html>",
+            b'{"value":',
+            b"[" * 2000 + b"0" + b"]" * 2000,
+            b'{"value":' + b"9" * 5000 + b"}",
+        ]
+        for content in bodies:
+            with self.subTest(content=content[:40]), patch("builtins.print"):
+                learner = self.run_requests(200, content)
+                self.assertEqual(learner.successful_responses["probe"], {"id": []})
+                self.assertEqual(learner.successful_primitives.get("probe", []), [])
+                self.assertEqual(
+                    learner.successful_parameters["probe"][("id", "query")], [42]
+                )
+
+    def test_valid_json_responses_still_teach_values(self):
+        for encoding in ("utf-8", "utf-16", "utf-32"):
+            with self.subTest(encoding=encoding):
+                learner = self.run_requests(200, '{"id": 7}'.encode(encoding))
+                self.assertEqual(learner.successful_responses["probe"]["id"], [7])
+
+    def test_valid_json_primitives_still_teach_values(self):
+        for content, expected in ((b"null", [None]), (b"[7, false]", [7, False])):
+            with self.subTest(content=content):
+                learner = self.run_requests(200, content)
+                self.assertEqual(learner.successful_primitives["probe"], expected)

@@ -498,8 +498,8 @@ class SmartValueGenerator:
             )
             return self._compose_parameter_gen_prompt(prompt_data, necessary=True)
 
-    def _validate_parameters(self, schema: Optional[Dict]) -> Dict[ParameterKey, Any]:
-        if schema is None:
+    def _validate_parameters(self, schema: Any) -> Dict[ParameterKey, Any]:
+        if not isinstance(schema, dict):
             return {}
         parameters: Dict[ParameterKey, Any] = {}
         for parameter_name, parameter_value in schema.items():
@@ -527,7 +527,7 @@ class SmartValueGenerator:
         )
         try:
             generated_parameters = json.loads(generated_parameters)
-        except json.JSONDecodeError:
+        except (ValueError, RecursionError):
             if not generated_parameters or not generated_parameters.strip():
                 generated_parameters = {}
             else:
@@ -571,7 +571,7 @@ class SmartValueGenerator:
             )
             try:
                 generated_request_body = json.loads(generated_request_body)
-            except json.JSONDecodeError:
+            except (ValueError, RecursionError):
                 if not generated_request_body or not generated_request_body.strip():
                     generated_request_body = {}
                 else:
@@ -608,7 +608,7 @@ class SmartValueGenerator:
         )
         try:
             generated_parameters = json.loads(generated_parameters)
-        except json.JSONDecodeError:
+        except (ValueError, RecursionError):
             if not generated_parameters or not generated_parameters.strip():
                 generated_parameters = {}
             else:
@@ -649,7 +649,7 @@ class SmartValueGenerator:
             )
             try:
                 generated_request_body = json.loads(generated_request_body)
-            except json.JSONDecodeError:
+            except (ValueError, RecursionError):
                 if not generated_request_body or not generated_request_body.strip():
                     generated_request_body = {}
                 else:
@@ -663,7 +663,7 @@ class SmartValueGenerator:
                 request_body[mime_type] = validated_request_body
         return request_body  # Returns {} if all mime types failed
 
-    def determine_auth_params(self):
+    def determine_auth_params(self) -> Optional[Dict[str, Any]]:
         """
         Determines if the operation consists of any authentication information sent as parameters in either the query or the request body
         :return:
@@ -676,19 +676,24 @@ class SmartValueGenerator:
         )
         try:
             auth_parameters = json.loads(auth_parameters)
-        except json.JSONDecodeError:
+        except (ValueError, RecursionError):
             if not auth_parameters or not auth_parameters.strip():
                 auth_parameters = {}
             else:
                 auth_parameters = attempt_fix_json(
                     auth_parameters, config=self.config
                 )
-        return auth_parameters.get("authentication_parameters") if isinstance(auth_parameters, dict) else None
+        auth_fields = (
+            auth_parameters.get("authentication_parameters")
+            if isinstance(auth_parameters, dict)
+            else None
+        )
+        return auth_fields if isinstance(auth_fields, dict) else None
 
     def _validate_value_params(
-        self, schema: Optional[Dict]
+        self, schema: Any
     ) -> Dict[ParameterKey, List[Any]]:
-        if schema is None:
+        if not isinstance(schema, dict):
             return {}
         param_mappings: Dict[ParameterKey, List[Any]] = defaultdict(list)
         for param_name, param_values in schema.items():
@@ -697,7 +702,7 @@ class SmartValueGenerator:
             if param_key is None:
                 # Fallback: LLM may have stripped the ::location suffix
                 param_key = self.parameter_name_lookup.get(param_name)
-            if param_key in self.parameters_raw:
+            if param_key in self.parameters_raw and isinstance(param_values, dict):
                 for param_value in param_values.values():
                     param_mappings[param_key].append(param_value)
         return param_mappings
@@ -723,7 +728,7 @@ class SmartValueGenerator:
         )
         try:
             generated_parameters = json.loads(generated_parameters)
-        except json.JSONDecodeError:
+        except (ValueError, RecursionError):
             if not generated_parameters or not generated_parameters.strip():
                 generated_parameters = {}
             else:
@@ -735,8 +740,8 @@ class SmartValueGenerator:
         )
         return parameter_matchings
 
-    def _validate_value_body(self, schema: Optional[Dict]) -> List:
-        if schema is None:
+    def _validate_value_body(self, schema: Any) -> List:
+        if not isinstance(schema, dict):
             return []
         values = [body for body in schema.values()]
         return values
@@ -762,7 +767,7 @@ class SmartValueGenerator:
             )
             try:
                 generated_request_body = json.loads(generated_request_body)
-            except json.JSONDecodeError:
+            except (ValueError, RecursionError):
                 if not generated_request_body or not generated_request_body.strip():
                     generated_request_body = {}
                 else:
@@ -800,7 +805,7 @@ class SmartValueGenerator:
             )
             try:
                 generated_request_body = json.loads(generated_request_body)
-            except json.JSONDecodeError:
+            except (ValueError, RecursionError):
                 if not generated_request_body or not generated_request_body.strip():
                     generated_request_body = {}
                 else:
@@ -835,7 +840,7 @@ class SmartValueGenerator:
         )
         try:
             generated_parameters = json.loads(generated_parameters)
-        except json.JSONDecodeError:
+        except (ValueError, RecursionError):
             if not generated_parameters or not generated_parameters.strip():
                 generated_parameters = {}
             else:

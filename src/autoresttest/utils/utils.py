@@ -367,7 +367,7 @@ def attempt_fix_json(invalid_json_str: str, config: Config | None = None):
     try:
         fixed_json = json.loads(fixed_json)
         return fixed_json
-    except json.JSONDecodeError:
+    except (ValueError, RecursionError):
         print("Attempt to fix JSON string failed.")
         print(f"Original JSON string: {invalid_json_str}")
         print(f"Fixed JSON string: {fixed_json}")
