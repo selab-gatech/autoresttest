@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, cast
 import numpy as np
 import requests
 from dotenv import load_dotenv
-from gensim.downloader import load
+from gensim.downloader import BASE_DIR, load
 from gensim.models import KeyedVectors
 
 from autoresttest.config import Config, get_config
@@ -611,9 +611,21 @@ def get_response_text_prefix(response: requests.Response, max_bytes: int = 1000)
         return prefix.decode("utf-8", errors="replace")
 
 
+GLOVE_MODEL = "glove-wiki-gigaword-50"
+
+
+def load_glove_vectors() -> KeyedVectors:
+    # gensim's load() fetches its online catalog on every call, even when the
+    # vectors are cached, so read the cached file directly when it exists.
+    cached_path = Path(BASE_DIR) / GLOVE_MODEL / f"{GLOVE_MODEL}.gz"
+    if cached_path.is_file():
+        return KeyedVectors.load_word2vec_format(str(cached_path))
+    return cast(KeyedVectors, load(GLOVE_MODEL))
+
+
 class EmbeddingModel:
     def __init__(self):
-        self.model: KeyedVectors = cast(KeyedVectors, load("glove-wiki-gigaword-50"))
+        self.model: KeyedVectors = load_glove_vectors()
         self.threshold = 0.8
         self._embedding_cache: Dict[str, Optional[np.ndarray]] = {}
 
