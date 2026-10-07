@@ -153,6 +153,13 @@ class RandomDependencyResponseTests(unittest.TestCase):
                     learner.successful_parameters["probe"][("id", "query")], [42]
                 )
 
+    def test_large_binary_responses_print_only_a_prefix(self):
+        with patch("builtins.print") as mock_print:
+            self.run_requests(200, b"\xa1\xb6" * 1_000_000)
+        printed = [arg for call in mock_print.call_args_list for arg in call.args]
+        self.assertTrue(printed)
+        self.assertTrue(all(len(arg) <= 200 for arg in printed))
+
     def test_valid_json_responses_still_teach_values(self):
         for encoding in ("utf-8", "utf-16", "utf-32"):
             with self.subTest(encoding=encoding):

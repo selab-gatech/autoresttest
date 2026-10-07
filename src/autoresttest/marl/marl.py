@@ -1547,8 +1547,9 @@ class QLearning:
                     except (ValueError, RecursionError):
                         # Invalid encodings, oversized integers, and excessive nesting
                         # must not terminate testing or become learned response values.
+                        # Print only a prefix: bodies can be large binaries (e.g. heap dumps).
                         print("Error decoding JSON response content")
-                        print("Response content: ", response.content)
+                        print("Response content: ", response.content[:200])
                         response_content = None
                         deconstructed_response.clear()
                     else:

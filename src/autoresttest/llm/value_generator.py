@@ -42,6 +42,7 @@ from autoresttest.prompts import (
 )
 from autoresttest.utils import (
     attempt_fix_json,
+    get_response_text_prefix,
     param_key_to_label,
     remove_nulls,
 )
@@ -344,7 +345,11 @@ class SmartValueGenerator:
             + "\n"
         )
         if response is not None:
-            prompt += FAILED_PARAMETER_RESPONSE_PROMPT + response.text + "\n\n"
+            prompt += (
+                FAILED_PARAMETER_RESPONSE_PROMPT
+                + get_response_text_prefix(response)
+                + "\n\n"
+            )
         if is_request_body:
             prompt += "REQUEST_BODY VALUES:\n"
         else:
@@ -369,7 +374,7 @@ class SmartValueGenerator:
                     if request_response.request.request_body:
                         prompt += f"PAST REQUEST BODY: {request_response.request.request_body}\n"
                     prompt += f"STATUS CODE: {request_response.response.status_code}\n"
-                    prompt += f"RESPONSE: {request_response.response.text[:1000]}\n\n"
+                    prompt += f"RESPONSE: {get_response_text_prefix(request_response.response)}\n\n"
 
         else:
             prompt += get_informed_agent_params_prompt() + "\n"
@@ -380,7 +385,7 @@ class SmartValueGenerator:
                     )
                     prompt += f"PAST PARAMETERS: {formatted_params}\n"
                     prompt += f"STATUS CODE: {request_response.response.status_code}\n"
-                    prompt += f"RESPONSE: {request_response.response.text[:1000]}\n\n"
+                    prompt += f"RESPONSE: {get_response_text_prefix(request_response.response)}\n\n"
 
         prompt += "Regardless of the past responses:"
         prompt += ENUM_EXAMPLE_CONSTRAINT_PROMPT + "\n"

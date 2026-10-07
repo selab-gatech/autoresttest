@@ -35,6 +35,7 @@ from autoresttest.utils import (
     get_body_object_combinations,
     dispatch_request,
     get_accept_header,
+    get_response_text_prefix,
 )
 from autoresttest.llm import NaiveValueGenerator, SmartValueGenerator
 
@@ -461,7 +462,7 @@ class RequestGenerator:
                     return RequestResponse(
                         request=request_data,
                         response=response,
-                        response_text=response.text,
+                        response_text=get_response_text_prefix(response),
                     )
             return None
         except requests.exceptions.RequestException as err:

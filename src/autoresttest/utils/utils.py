@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, cast
 
 import numpy as np
+import requests
 from dotenv import load_dotenv
 from gensim.downloader import load
 from gensim.models import KeyedVectors
@@ -595,6 +596,19 @@ def is_json_seriable(data):
         return True
     except (TypeError, ValueError):
         return False
+
+
+def get_response_text_prefix(response: requests.Response, max_bytes: int = 1000) -> str:
+    """Decode only the start of a response body.
+
+    Response.text guesses the encoding by scanning the entire body on every access,
+    which takes minutes on large binary bodies such as heap dumps.
+    """
+    prefix = (response.content or b"")[:max_bytes]
+    try:
+        return prefix.decode(response.encoding or "utf-8", errors="replace")
+    except LookupError:
+        return prefix.decode("utf-8", errors="replace")
 
 
 class EmbeddingModel:
