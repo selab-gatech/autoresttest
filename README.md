@@ -327,6 +327,8 @@ poetry run autoresttest --skip-wizard
 poetry run autoresttest --skip-wizard -s specs/original/oas/spotify.yaml -t 600
 ```
 
+When output is not a terminal (for example, `docker run` without `-t`, CI, or output redirected to a file), the live display is replaced by a one-line status every minute. Set `FORCE_COLOR=1` to keep the full display in consoles that are not detected as terminals, such as some IDE run panels.
+
 ### Docker Execution
 
 For ease of use, the software can be executed using Docker. The user can apply the following commands from the 

@@ -67,7 +67,7 @@ class ConfigWizard:
         width: int = 100,
         config: Config | None = None,
     ):
-        self.console = Console(force_terminal=True, width=width)
+        self.console = Console(width=width)
         self.theme = theme
         self.width = width
         self._default_config = config if config is not None else get_config()

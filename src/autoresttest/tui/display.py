@@ -30,7 +30,7 @@ class TUIDisplay:
     """Main TUI display handler for AutoRestTest."""
 
     def __init__(self, theme: TUITheme = DEFAULT_THEME, width: int = 80):
-        self.console = Console(force_terminal=True, width=width)
+        self.console = Console(width=width)
         self.theme = theme
         self.width = width
 

@@ -18,6 +18,10 @@ from rich.text import Text
 
 from .themes import DEFAULT_THEME, TUITheme
 
+# Seconds between plain status lines when output is not a terminal (e.g. Docker logs),
+# where the live display cannot redraw in place.
+STATUS_INTERVAL_SECONDS = 60
+
 
 class LiveDisplay:
     """Real-time live display for Q-learning request generation phase."""
@@ -32,7 +36,7 @@ class LiveDisplay:
         theme: TUITheme = DEFAULT_THEME,
         width: int = 100,
     ):
-        self.console = Console(force_terminal=True, width=width)
+        self.console = Console(width=width)
         self.theme = theme
         self.width = width
         self.time_duration = time_duration
@@ -48,6 +52,7 @@ class LiveDisplay:
         self.output_tokens: int = 0
         self.mutation_count: int = 0
         self.dependencies_discovered: int = 0
+        self._last_status_time: float = 0.0
 
         # Live display instance
         self._live: Optional[Live] = None
@@ -334,9 +339,40 @@ class LiveDisplay:
             padding=(1, 2),
         )
 
+    def _print_status(self):
+        """Print a one-line status for non-terminal output."""
+        now = time.time()
+        self._last_status_time = now
+        elapsed = now - self.start_time
+        remaining = max(0, self.time_duration - elapsed)
+        codes = ", ".join(
+            f"{code}: {count}" for code, count in sorted(self.responses.items())
+        )
+        print(
+            f"[{self._format_time(elapsed)}] Request generation: "
+            f"{sum(self.responses.values())} requests, "
+            f"{len(self.successful_operations)}/{self.total_operations} operations with 2xx, "
+            f"{self.unique_errors} unique server errors, "
+            f"{self._format_time(remaining)} remaining | status codes: {codes or 'none'}",
+            flush=True,
+        )
+
+    def _refresh(self):
+        """Redraw the live display, or print a periodic status line without a terminal."""
+        if self._live:
+            self._live.update(self._generate_display())
+        elif (
+            self.start_time
+            and time.time() - self._last_status_time >= STATUS_INTERVAL_SECONDS
+        ):
+            self._print_status()
+
     def start(self):
-        """Start the live display."""
+        """Start the live display (terminals only; otherwise status lines are printed)."""
         self.start_time = time.time()
+        self._last_status_time = self.start_time
+        if not self.console.is_terminal:
+            return
         self._live = Live(
             self._generate_display(),
             console=self.console,
@@ -371,9 +407,7 @@ class LiveDisplay:
         self.output_tokens = output_tokens
         self.mutation_count = mutation_count
         self.dependencies_discovered = dependencies_discovered
-
-        if self._live:
-            self._live.update(self._generate_display())
+        self._refresh()
 
     def __enter__(self):
         """Context manager entry."""
@@ -390,7 +424,7 @@ class ProgressDisplay:
     """Progress display for graph construction and Q-table initialization."""
 
     def __init__(self, theme: TUITheme = DEFAULT_THEME, width: int = 100):
-        self.console = Console(force_terminal=True, width=width)
+        self.console = Console(width=width)
         self.theme = theme
         self.width = width
 
@@ -432,7 +466,7 @@ class InitializationProgressDisplay:
         theme: TUITheme = DEFAULT_THEME,
         width: int = 100,
     ):
-        self.console = Console(force_terminal=True, width=width)
+        self.console = Console(width=width)
         self.theme = theme
         self.width = width
         self.title = title
@@ -442,6 +476,7 @@ class InitializationProgressDisplay:
         self.completed_operations: int = 0
         self.current_operation: str = ""
         self.start_time: float = 0.0
+        self._last_status_time: float = 0.0
 
         # Live display instance
         self._live: Optional[Live] = None
@@ -520,9 +555,32 @@ class InitializationProgressDisplay:
             padding=(1, 2),
         )
 
+    def _print_status(self):
+        """Print a one-line status for non-terminal output."""
+        now = time.time()
+        self._last_status_time = now
+        print(
+            f"[{self._format_time(now - self.start_time)}] {self.title}: "
+            f"{self.completed_operations}/{self.total_operations} operations",
+            flush=True,
+        )
+
+    def _refresh(self):
+        """Redraw the live display, or print a periodic status line without a terminal."""
+        if self._live:
+            self._live.update(self._generate_display())
+        elif (
+            self.start_time
+            and time.time() - self._last_status_time >= STATUS_INTERVAL_SECONDS
+        ):
+            self._print_status()
+
     def start(self):
-        """Start the live progress display."""
+        """Start the live progress display (terminals only; otherwise status lines are printed)."""
         self.start_time = time.time()
+        self._last_status_time = self.start_time
+        if not self.console.is_terminal:
+            return
         self._live = Live(
             self._generate_display(),
             console=self.console,
@@ -541,23 +599,19 @@ class InitializationProgressDisplay:
         """Update progress with current operation and completion count."""
         self.current_operation = current_operation
         self.completed_operations = completed
-
-        if self._live:
-            self._live.update(self._generate_display())
+        self._refresh()
 
     def increment(self, operation_name: str = ""):
         """Increment completed count and optionally update current operation."""
         self.completed_operations += 1
         if operation_name:
             self.current_operation = operation_name
-        if self._live:
-            self._live.update(self._generate_display())
+        self._refresh()
 
     def set_current(self, operation_name: str):
         """Set the current operation being processed."""
         self.current_operation = operation_name
-        if self._live:
-            self._live.update(self._generate_display())
+        self._refresh()
 
     def __enter__(self):
         """Context manager entry."""
