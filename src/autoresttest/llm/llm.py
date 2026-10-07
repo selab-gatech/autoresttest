@@ -1,6 +1,7 @@
 import os
 import threading
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -11,6 +12,12 @@ from autoresttest.utils import encode_dictionary
 
 
 load_dotenv()
+
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def is_local_endpoint(api_base: str) -> bool:
+    return urlparse(api_base).hostname in LOCAL_HOSTS
 
 
 @dataclass
@@ -43,11 +50,14 @@ class LanguageModel:
         config: Config | None = None,
     ):
         self.config = config if config is not None else get_config()
-        self.api_key = os.getenv("API_KEY")
-        if self.api_key is None or self.api_key.strip() == "":
-            raise ValueError(
-                "API key is required for OpenAI language model, found None or empty string."
-            )
+        self.api_key = os.getenv("API_KEY") or ""
+        if self.api_key.strip() == "":
+            if not is_local_endpoint(self.config.llm_api_base):
+                raise ValueError(
+                    "API key is required for OpenAI language model, found None or empty string."
+                )
+            # Local servers usually need no key; with an empty key the SDK omits the auth header.
+            self.api_key = ""
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.config.llm_api_base,
