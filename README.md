@@ -37,6 +37,7 @@ Steps:
    - `cp configurations.toml.example configurations.toml`
 5. Create a `.env` file in the project root and add:
    - `API_KEY='<YOUR_API_KEY>'`
+   - This can be skipped for a model served on `localhost`, `127.0.0.1`, or `::1` that does not require a key.
 
 Alternatives (provided but not recommended):
 - `pip install -r requirements.txt`
@@ -206,7 +207,7 @@ api_base = "https://api.openai.com/v1"
 engine = "google/gemini-2.0-flash-001"
 api_base = "https://openrouter.ai/api/v1"
 
-# Local model (LM Studio, Ollama, etc.)
+# Local model (LM Studio, Ollama, vLLM, etc.); API_KEY is optional on localhost
 [llm]
 engine = "local-model"
 api_base = "http://localhost:1234/v1"
