@@ -516,7 +516,9 @@ class QLearning:
 
         path_params, query_params, header_params, cookie_params = (
             split_parameter_values(
-                operation_properties.parameters, processed_parameters
+                operation_properties.parameters,
+                processed_parameters,
+                include_undefined=True,  # Send mutated parameter names and locations
             )
         )
 
