@@ -113,7 +113,8 @@ class SpecificationParser:
         return parser_cls(
             spec_path,
             backend="openapi-spec-validator",  # AutoRestTest supports OAS 3.x
-            strict=True,
+            # Stringify non-string keys, such as unquoted YAML status codes (200:).
+            strict=False,
             recursion_limit=self.config.recursion_limit,
             recursion_limit_handler=default_recursive_limit_handler,
         )
@@ -366,6 +367,7 @@ class SpecificationParser:
         """
         response_properties = {}
         for status_code, response_details in responses.items():
+            status_code = str(status_code)
             response_properties.setdefault(
                 status_code,
                 ResponseProperties(
