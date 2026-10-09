@@ -499,18 +499,6 @@ class RequestGenerator:
         operation_params = get_params(curr_node.operation_properties.parameters)
         # operation_body_params = get_request_body_params(curr_node.operation_properties.request_body)
 
-        # take the reverse of mappings since API outputs least likely values first
-        req_param_mappings = (
-            {k: v for k, v in reversed(list(req_param_mappings.items()))}
-            if req_param_mappings
-            else {}
-        )
-        req_body_mappings = (
-            {k: v for k, v in reversed(list(req_body_mappings.items()))}
-            if req_body_mappings
-            else {}
-        )
-
         if req_param_mappings:
             for parameter, values in req_param_mappings.items():
                 for value in values:
