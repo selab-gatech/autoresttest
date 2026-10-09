@@ -330,9 +330,13 @@ class TUIDisplay:
             if not response:
                 return default
             return response in ("y", "yes", "true", "1")
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
+            # No input available (e.g. no terminal in a container): use the default.
             self.console.print()
             return default
+        except KeyboardInterrupt:
+            self.console.print()
+            return False
 
     def wait_for_key(self, message: str = "Press Enter to continue..."):
         """Wait for user to press Enter."""
