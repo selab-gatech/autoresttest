@@ -223,6 +223,45 @@ class SpecificationParser:
 
         return None
 
+    def _flatten_composition(self, schema: Dict) -> Dict:
+        """
+        Merge a schema's allOf sub-schemas (recursively) and the first option of its oneOf
+        and anyOf into a single schema, so composed schemas keep their type, properties
+        and required fields. Keys on the schema itself take precedence over its sub-schemas,
+        and earlier sub-schemas over later ones.
+        """
+        parts = [part for part in schema.get("allOf") or [] if isinstance(part, dict)]
+        for keyword in ("oneOf", "anyOf"):
+            options = [opt for opt in schema.get(keyword) or [] if isinstance(opt, dict)]
+            if options:
+                parts.append(options[0])
+        if not parts:
+            return schema
+
+        merged = {
+            key: value
+            for key, value in schema.items()
+            if key not in ("allOf", "oneOf", "anyOf")
+        }
+        properties: Dict[str, Any] = {}
+        required: List[str] = []
+        for part in [*(self._flatten_composition(part) for part in parts), schema]:
+            if isinstance(part.get("properties"), dict):
+                properties.update(part["properties"])
+            if isinstance(part.get("required"), list):
+                required += part["required"]
+            if part is not schema:
+                for key, value in part.items():
+                    if key not in ("properties", "required"):
+                        merged.setdefault(key, value)
+        if properties:
+            merged["properties"] = properties
+        if required:
+            merged["required"] = list(
+                dict.fromkeys(name for name in required if isinstance(name, str))
+            )
+        return merged
+
     def process_parameter_schema(
         self, schema: Dict | None, description: str | None = None
     ) -> SchemaProperties | None:
@@ -231,6 +270,7 @@ class SpecificationParser:
         """
         if not schema or not isinstance(schema, dict):
             return None
+        schema = self._flatten_composition(schema)
 
         value_properties = SchemaProperties(
             type=self._infer_schema_type(schema),
