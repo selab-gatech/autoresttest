@@ -114,6 +114,7 @@ The Dockerfile pins every download:
 - llama.cpp image ghcr.io/ggml-org/llama.cpp:server-cuda12-b11434, by digest.
 - Model revision d1c082be9cf3c8a514acf63b8761f4b41935842e, checked by SHA-256.
 - AutoRestTest commit 19e69456f37177547b5748a4d90bd6f18783ace2, downloaded
-  from GitHub. Its source code is identical to the src/ folder in the
-  rest-league-2027 tag; the tag only adds the restgym/ folder.
+  from GitHub. Its src/ folder, pyproject.toml and poetry.lock are identical
+  to those in the rest-league-2027 tag. The tag differs from it only in the
+  restgym/ folder (this pin and the documentation).
 - GloVe vectors and uv 0.12.23, checked by SHA-256.
