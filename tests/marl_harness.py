@@ -10,6 +10,8 @@ from autoresttest.agents.parameter_agent import ParameterAction
 from autoresttest.config import apply_config_overrides, load_config
 from autoresttest.marl.marl import QLearning
 
+NOT_SET = object()
+
 
 def make_learner(operation):
     graph = SimpleNamespace(
@@ -52,7 +54,7 @@ def run_once(
     data_source,
     dependency_action=("BEST", {}, {}),
     value_action=None,
-    body_properties=None,
+    body_properties=NOT_SET,
     status_code=200,
     content=b"{}",
 ):
@@ -80,7 +82,7 @@ def run_once(
                 learner.value_agent, "get_best_action", return_value=value_action
             ),
         ]
-    if body_properties is not None:
+    if body_properties is not NOT_SET:
         patches.append(
             patch.object(
                 learner.body_object_agent, "get_action", return_value=body_properties

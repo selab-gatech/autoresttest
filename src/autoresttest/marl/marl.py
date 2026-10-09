@@ -1363,16 +1363,22 @@ class QLearning:
                     next_Q_dependency_body,
                 ) = ([], [], [], [], [], [], [], [])
                 if data_source == "LLM" and select_values is not None:
-                    # Credit only the body that was sent: the chosen mime type, or none.
+                    # Credit only the body that was sent: the chosen mime type, unless no
+                    # mime type was chosen or the body object agent dropped the body.
                     # select_values is used rather than body, because the body object agent
                     # may have dropped properties and Q-table entries match whole bodies.
+                    body_sent = (
+                        select_params.mime_type is not None
+                        and body is not None
+                        and body.get(select_params.mime_type) is not None
+                    )
                     processed_value_action = ValueAction(
                         param_mappings=parameters,
                         body_mappings=(
                             self.get_body_mapping(
                                 [select_params.mime_type], select_values.body_mappings
                             )
-                            if select_params.mime_type
+                            if body_sent
                             else None
                         ),
                     )

@@ -23,7 +23,7 @@ LLM_VALUES = ValueAction(param_mappings=None, body_mappings={JSON: {"name": "x"}
 
 
 class ValueAgentBodyCreditTests(unittest.TestCase):
-    def body_q_values(self, mime_type):
+    def body_q_values(self, mime_type, body_properties=("name",)):
         learner = make_learner(OPERATION)
         learner.value_agent.q_table = {
             "createItem": {
@@ -38,7 +38,7 @@ class ValueAgentBodyCreditTests(unittest.TestCase):
             mime_type=mime_type,
             data_source="LLM",
             value_action=LLM_VALUES,
-            body_properties=("name",),
+            body_properties=body_properties,
             status_code=400,
         )
         body = learner.value_agent.q_table["createItem"]["body"]
@@ -51,6 +51,10 @@ class ValueAgentBodyCreditTests(unittest.TestCase):
 
     def test_no_body_is_credited_when_none_was_sent(self):
         self.assertEqual(self.body_q_values(None), (0.0, 0.0))
+
+    def test_no_body_is_credited_when_the_body_object_agent_drops_it(self):
+        # The body object agent's "None" action sends the chosen mime type without a body.
+        self.assertEqual(self.body_q_values(JSON, body_properties=None), (0.0, 0.0))
 
 
 if __name__ == "__main__":
