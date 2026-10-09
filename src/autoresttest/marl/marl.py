@@ -989,6 +989,9 @@ class QLearning:
             # Declare parameters and body with union types to handle all branches
             parameters: dict[ParameterKey, Any] | None = None
             body: dict[str, Any] | None = None
+            # Parameters and body properties whose values came from a dependency
+            dependency_params_used: set[ParameterKey] = set()
+            dependency_props_used: set[str] = set()
             if data_source == "LLM":
                 select_values = self.value_agent.get_action(operation_id)
                 parameters = (
@@ -1102,6 +1105,9 @@ class QLearning:
                                             dependency["dependent_operation"]
                                         ][dependency["dependent_val"]]
                                     )
+                dependency_params_used = {
+                    param for param, value in parameters.items() if value is not None
+                }
                 # Fill required parameters that got no dependency value, including
                 # when the operation has no parameter dependencies at all.
                 if select_params.req_params:
@@ -1193,6 +1199,7 @@ class QLearning:
                                             )
                                         )
 
+                    dependency_props_used = set(unconstructed_body)
                     deconstructed_supplement_body = (
                         self._deconstruct_body(supplement_body[select_params.mime_type])
                         if supplement_body
@@ -1426,11 +1433,27 @@ class QLearning:
                     and dependency_type == "RANDOM"
                     and 200 <= response.status_code < 300
                 ):
+                    # Record only dependencies whose values were sent: required
+                    # parameters that took a dependency value, and body properties the
+                    # body object agent kept in the chosen mime type's body.
+                    sent_body = (
+                        body.get(select_params.mime_type)
+                        if body and select_params.mime_type
+                        else None
+                    )
+                    if sent_body is None:
+                        dependency_props_used = set()
+                    elif select_params.mime_type in select_body_properties:
+                        dependency_props_used &= set(
+                            select_body_properties[select_params.mime_type] or ()
+                        )
                     if parameter_dependencies:
                         for (
                             parameter,
                             dependency_info,
                         ) in parameter_dependencies.items():
+                            if parameter not in dependency_params_used:
+                                continue
                             dependent_operation = dependency_info["dependent_operation"]
                             dependency_location = dependency_info["in_value"]
                             dependent_val = dependency_info["dependent_val"]
@@ -1447,6 +1470,8 @@ class QLearning:
                             body_param,
                             dependency_info,
                         ) in request_body_dependencies.items():
+                            if body_param not in dependency_props_used:
+                                continue
                             dependent_operation = dependency_info["dependent_operation"]
                             dependency_location = dependency_info["in_value"]
                             dependent_val = dependency_info["dependent_val"]

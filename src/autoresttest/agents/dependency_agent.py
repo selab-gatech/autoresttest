@@ -636,9 +636,9 @@ class DependencyAgent(BaseAgent):
             self.q_table[operation_id][param_location][operation_param][
                 dependent_operation_id
             ][dependent_location][dependent_param] = 0
-        self._notify(
-            f"Dependency: {operation_id} → {dependent_operation_id} ({operation_param} → {dependent_param})"
-        )
+            self._notify(
+                f"Dependency: {operation_id} → {dependent_operation_id} ({operation_param} → {dependent_param})"
+            )
 
     # Get a random value from the successful operations to test dependencies
     def assign_random_dependency_from_successful(
