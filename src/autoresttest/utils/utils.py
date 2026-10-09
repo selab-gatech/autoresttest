@@ -28,12 +28,17 @@ Q_TABLE_CACHE_DIR = CACHE_ROOT / "q_tables"
 GRAPH_CACHE_DIR = CACHE_ROOT / "graphs"
 
 
+def _is_empty(value: Any) -> bool:
+    """None and empty containers are dropped; 0, False and "" are spec values."""
+    return value is None or (isinstance(value, (dict, list, tuple, set)) and not value)
+
+
 def remove_nulls(item: Any) -> Any:
     if hasattr(item, "to_dict"):
         return item.to_dict()
     elif isinstance(item, dict):
-        cleaned = {k: remove_nulls(v) for k, v in item.items() if v}
-        return {k: v for k, v in cleaned.items() if v}
+        cleaned = {k: remove_nulls(v) for k, v in item.items() if not _is_empty(v)}
+        return {k: v for k, v in cleaned.items() if not _is_empty(v)}
     elif isinstance(item, Iterable) and not isinstance(item, (str, bytes)):
         cleaned = [remove_nulls(i) for i in item]
         return [i for i in cleaned if i is not None]
