@@ -399,6 +399,9 @@ class AutoRestTest:
                         self.tui.print_step("Cache load failed for Header Agent", "warning")
                         loaded_header_from_shelf = False
 
+            # Value tables generated while every LLM query failed (e.g. the model
+            # server was not up) are not cached, so a restart regenerates them.
+            skip_cache = False
             if not loaded_value_from_shelf:
                 total_ops = len(operation_graph.operation_nodes)
                 with InitializationProgressDisplay(
@@ -419,6 +422,7 @@ class AutoRestTest:
                     "success",
                 )
                 self.print_llm_failures()
+                skip_cache = LanguageModel.produced_no_output()
 
             if self.config.enable_header_agent and not loaded_header_from_shelf:
                 total_ops = len(operation_graph.operation_nodes)
@@ -443,14 +447,20 @@ class AutoRestTest:
             elif not self.config.enable_header_agent:
                 q_learning.header_agent.q_table = {}
 
-            try:
-                db[spec_name] = {
-                    "value": q_learning.value_agent.q_table,
-                    "header": q_learning.header_agent.q_table,
-                }
-                self.tui.print_step("Q-tables cached for future runs", "success")
-            except Exception:
-                self.tui.print_step("Failed to cache Q-tables", "warning")
+            if skip_cache:
+                self.tui.print_step(
+                    "Q-tables not cached: no LLM query succeeded, so the next run regenerates them",
+                    "warning",
+                )
+            else:
+                try:
+                    db[spec_name] = {
+                        "value": q_learning.value_agent.q_table,
+                        "header": q_learning.header_agent.q_table,
+                    }
+                    self.tui.print_step("Q-tables cached for future runs", "success")
+                except Exception:
+                    self.tui.print_step("Failed to cache Q-tables", "warning")
 
         output_q_table(q_learning, spec_name)
 

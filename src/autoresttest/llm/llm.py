@@ -35,6 +35,7 @@ class LanguageModel:
 
     # Failed queries by reason, e.g. {"APIConnectionError": 240}
     failures: Counter = Counter()
+    successful_queries = 0
 
     # Thread-safety locks for parallel value generation
     _cache_lock = threading.RLock()
@@ -47,6 +48,13 @@ class LanguageModel:
             input_tokens=LanguageModel.input_tokens,
             output_tokens=LanguageModel.output_tokens,
         )
+
+    @staticmethod
+    def produced_no_output() -> bool:
+        """True when queries were made and none of them succeeded."""
+        with LanguageModel._failure_lock:
+            failed = sum(LanguageModel.failures.values()) > 0
+        return failed and LanguageModel.successful_queries == 0
 
     @staticmethod
     def get_failures() -> dict[str, int]:
@@ -156,6 +164,8 @@ class LanguageModel:
         if not response.choices:
             self._report_failure("NoChoices", "the response has no choices")
             return ""
+        with LanguageModel._token_lock:
+            LanguageModel.successful_queries += 1
         content = response.choices[0].message.content
         result = content.strip() if content else ""
 
