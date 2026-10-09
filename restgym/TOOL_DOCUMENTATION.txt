@@ -99,11 +99,17 @@ The tool's standard output starts with:
 - "Model server ready." (or "No CUDA device found" / "Model server not
   ready" if the model is not used).
 
-Setup (graph construction and LLM value generation) then takes roughly
-20 to 90 seconds, after which AutoRestTest prints one status line per minute
-with request counts and status codes. llama-server's log goes to standard
-error. The GPU is busy only during setup; the testing loop does not call the
-model.
+Setup (graph construction and LLM value generation) then takes from about
+20 seconds to a few minutes, depending on the API, after which AutoRestTest
+prints one status line per minute with request counts and status codes.
+llama-server's log goes to standard error. The GPU is busy only during setup;
+the testing loop does not call the model.
+
+If LLM queries fail during setup, AutoRestTest prints the first failure of
+each kind and its 10th, 100th, ... occurrence ("[LLM] Query failed: ..."),
+then a summary ("Failed LLM queries: APIConnectionError x262"). Operations
+whose queries failed are tested without LLM values. If every query failed,
+it also prints "Q-tables not cached", so a restart generates them again.
 
 
 7. Pinned versions
