@@ -271,11 +271,11 @@ host = "localhost"
 port = 8080
 ```
 
-When `override_url` is set to `true`, the tool constructs the API URL as `http://{host}:{port}/` instead of using the specification's server URL.
+When `override_url` is set to `true`, the tool replaces the scheme, host and port of the specification's server URL with `http://{host}:{port}` and keeps its path. For example, a server URL of `https://api.example.com/v1` becomes `http://localhost:8080/v1`.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `override_url` | `false` | When `false`, uses the URL from the OpenAPI spec. When `true`, uses the custom host and port. |
+| `override_url` | `false` | When `false`, uses the URL from the OpenAPI spec. When `true`, uses the custom host and port with the spec's base path. |
 | `host` | `localhost` | The hostname for the custom API URL. |
 | `port` | `8080` | The port number for the custom API URL. |
 | `request_timeout_seconds` | `30.0` | Positive, finite connection/read inactivity timeout for requests to the API being tested, including setup requests. Applies regardless of `override_url`. |

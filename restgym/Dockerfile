@@ -36,7 +36,7 @@ RUN curl -fL --retry 5 --retry-all-errors -o /tmp/uv.tar.gz https://github.com/a
     && uv venv --python 3.10 "$VIRTUAL_ENV"
 
 # AutoRestTest at a pinned commit, installed from poetry.lock.
-ARG AUTORESTTEST_REF=f4fe85ca57e6da242084c2c2b4ae95c8d81d2b5d
+ARG AUTORESTTEST_REF=19e69456f37177547b5748a4d90bd6f18783ace2
 WORKDIR /tool
 RUN curl -fL --retry 5 --retry-all-errors "https://github.com/selab-gatech/AutoRestTest/archive/${AUTORESTTEST_REF}.tar.gz" \
         | tar -xz --strip-components=1 --wildcards --no-wildcards-match-slash '*/src' '*/pyproject.toml' '*/poetry.lock' '*/README.md' \

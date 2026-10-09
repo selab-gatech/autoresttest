@@ -21,6 +21,9 @@ class OperationDependencyComparator:
     def __init__(self, model: EmbeddingModel):
         self.model = model
         self.threshold = 0.8
+        # Matches below the threshold but at or above this floor become tentative
+        # (fallback) edges for operations that have no match above the threshold.
+        self.tentative_floor = 0.5
 
     def get_parameter_list(
         self, operation: OperationProperties
@@ -205,11 +208,11 @@ class OperationDependencyComparator:
 
         for parameter, similarities in parameter_matchings.items():
             for similarity in similarities:
-                if parameter not in similar_parameters:
-                    similar_parameters[parameter] = []
+                # Only parameters with a match above the threshold get an entry, so an
+                # operation pair without one falls back to a tentative edge.
                 if similarity.similarity > self.threshold:
-                    similar_parameters[parameter].append(similarity)
-                else:
+                    similar_parameters.setdefault(parameter, []).append(similarity)
+                elif similarity.similarity >= self.tentative_floor:
                     next_most_similar_parameters.append((parameter, similarity))
 
         return similar_parameters, next_most_similar_parameters

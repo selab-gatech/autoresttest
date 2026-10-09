@@ -55,7 +55,8 @@ class RequestGenerator:
     def __init__(self, operation_graph: "OperationGraph", api_url: str, is_naive=True):
         self.operation_graph: "OperationGraph" = operation_graph
         self.config = operation_graph.config
-        self.api_url = api_url
+        # Endpoint paths start with "/", so a trailing slash here would produce "//".
+        self.api_url = api_url.rstrip("/")
         self.status_codes: Dict[int, StatusCode] = (
             {}
         )  # dictionary to track status code occurrences
@@ -280,7 +281,12 @@ class RequestGenerator:
             response = self.create_and_send_request(
                 operation_node, allow_retry=True, permitted_retries=1
             )
-            if response is not None and response.response and not response.response.ok:
+            # requests.Response is falsy for 4xx/5xx, so compare with None explicitly.
+            if (
+                response is not None
+                and response.response is not None
+                and not response.response.ok
+            ):
                 failed_responses.append(response)
         if failed_responses:
             parameter_mappings, request_body_mappings = (
@@ -493,18 +499,6 @@ class RequestGenerator:
         operation_params = get_params(curr_node.operation_properties.parameters)
         # operation_body_params = get_request_body_params(curr_node.operation_properties.request_body)
 
-        # take the reverse of mappings since API outputs least likely values first
-        req_param_mappings = (
-            {k: v for k, v in reversed(list(req_param_mappings.items()))}
-            if req_param_mappings
-            else {}
-        )
-        req_body_mappings = (
-            {k: v for k, v in reversed(list(req_body_mappings.items()))}
-            if req_body_mappings
-            else {}
-        )
-
         if req_param_mappings:
             for parameter, values in req_param_mappings.items():
                 for value in values:
@@ -700,7 +694,11 @@ class RequestGenerator:
                         completed_count += 1
                         if progress_callback:
                             progress_callback(result_op_id, completed_count)
-                except Exception:
+                except Exception as exc:
+                    print(
+                        f"Value table generation failed for operation {op_id}: "
+                        f"{type(exc).__name__}: {str(exc)[:300]}"
+                    )
                     # Still increment count on error to avoid stuck progress
                     with progress_lock:
                         completed_count += 1

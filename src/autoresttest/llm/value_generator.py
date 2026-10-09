@@ -422,11 +422,15 @@ class SmartValueGenerator:
         items = schema.get("items")
         if properties:
             # NOTE: We do not handle nested objects
-            nonreq_request_body = self._isolate_nonreq_params(properties)
+            nonreq_request_body = self._isolate_nonreq_params(
+                properties, is_request_body=True
+            )
         elif items:
             nonreq_request_body = self._isolate_nonreq_request_body(items)
         else:
-            nonreq_request_body = self._isolate_nonreq_params(schema)
+            # A body without properties (e.g. a string) has no fields to list; the
+            # schema's own keys ("type", "description") are not body fields.
+            nonreq_request_body = {}
         return nonreq_request_body
 
     def _form_parameter_gen_prompt(
@@ -508,7 +512,11 @@ class SmartValueGenerator:
             return {}
         parameters: Dict[ParameterKey, Any] = {}
         for parameter_name, parameter_value in schema.items():
+            # Try exact match first (e.g., "name::query"), then fallback to plain name (e.g., "name")
             param_key = self.parameter_lookup.get(parameter_name)
+            if param_key is None:
+                # Fallback: LLM may have stripped the ::location suffix
+                param_key = self.parameter_name_lookup.get(parameter_name)
             if param_key and param_key not in self.parameter_requirements_raw:
                 parameters[param_key] = parameter_value
         parameters.update(self.parameter_requirements_raw)

@@ -28,12 +28,17 @@ Q_TABLE_CACHE_DIR = CACHE_ROOT / "q_tables"
 GRAPH_CACHE_DIR = CACHE_ROOT / "graphs"
 
 
+def _is_empty(value: Any) -> bool:
+    """None and empty containers are dropped; 0, False and "" are spec values."""
+    return value is None or (isinstance(value, (dict, list, tuple, set)) and not value)
+
+
 def remove_nulls(item: Any) -> Any:
     if hasattr(item, "to_dict"):
         return item.to_dict()
     elif isinstance(item, dict):
-        cleaned = {k: remove_nulls(v) for k, v in item.items() if v}
-        return {k: v for k, v in cleaned.items() if v}
+        cleaned = {k: remove_nulls(v) for k, v in item.items() if not _is_empty(v)}
+        return {k: v for k, v in cleaned.items() if not _is_empty(v)}
     elif isinstance(item, Iterable) and not isinstance(item, (str, bytes)):
         cleaned = [remove_nulls(i) for i in item]
         return [i for i in cleaned if i is not None]
@@ -284,13 +289,24 @@ def get_request_body_params(
     )
 
 
+def _header_or_cookie_value(value: Any) -> str:
+    """requests only accepts string header and cookie values."""
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, default=str)
+
+
 def split_parameter_values(
     operation_parameters: Dict[ParameterKey, ParameterProperties],
     provided_values: Optional[Dict[ParameterKey, Any]],
+    include_undefined: bool = False,
 ):
     """
     Split provided parameter values into path, query, header, and cookie buckets based on their 'in' value.
-    Ignores parameters that are not defined on the operation.
+    Ignores parameters that are not defined on the operation, unless include_undefined is set: then
+    (name, location) keys the operation does not define, such as mutated parameter names or
+    locations, are sent in their query, header or cookie location.
+    Header and cookie values are converted to strings.
     """
     path_params: Dict[str, Any] = {}
     query_params: Dict[str, Any] = {}
@@ -314,19 +330,26 @@ def split_parameter_values(
                     normalized_key = candidate_key
                     break
 
-        if normalized_key not in operation_parameters:
-            continue
         if value is None:
             continue
-        name, in_value = normalized_key
-        in_value = in_value or operation_parameters[normalized_key].in_value
+        if normalized_key in operation_parameters:
+            name, in_value = normalized_key
+            in_value = in_value or operation_parameters[normalized_key].in_value
+        elif (
+            include_undefined
+            and isinstance(normalized_key, tuple)
+            and normalized_key[1] in ("query", "header", "cookie")
+        ):
+            name, in_value = normalized_key
+        else:
+            continue
 
         if in_value == "path":
             path_params[name] = value
         elif in_value == "header":
-            header_params[name] = value
+            header_params[name] = _header_or_cookie_value(value)
         elif in_value == "cookie":
-            cookie_params[name] = value
+            cookie_params[name] = _header_or_cookie_value(value)
         else:
             query_params[name] = value
 

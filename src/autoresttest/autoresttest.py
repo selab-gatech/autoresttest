@@ -219,6 +219,7 @@ def output_report(
         + "%",
         "Number of Unique Server Errors": unique_errors,
         "Operations with Server Errors": q_learning.errors,
+        "Failed LLM Queries": LanguageModel.get_failures(),
     }
 
     with (output_dir / "report.json").open("w") as f:
@@ -262,7 +263,8 @@ class AutoRestTest:
         self.tui.print_step("Specification parsed successfully!", "success")
 
         if self.config.api.override_url:
-            api_url = self.config.custom_api_url
+            # Keep the spec's base path (e.g. /api/v1); only the host and port change.
+            api_url = self.config.custom_api_url + spec_parser.get_api_base_path()
             self.tui.print_step(f"Using custom API URL: {api_url}", "info")
         else:
             api_url = get_api_url(spec_parser)
@@ -331,6 +333,12 @@ class AutoRestTest:
 
         return operation_graph
 
+    def print_llm_failures(self):
+        failures = LanguageModel.get_failures()
+        if failures:
+            summary = ", ".join(f"{reason} x{count}" for reason, count in failures.items())
+            self.tui.print_step(f"Failed LLM queries: {summary}", "warning")
+
     def perform_q_learning(self, operation_graph: OperationGraph, spec_name: str):
         self.tui.print_phase_start(
             "Q-Table Initialization",
@@ -391,6 +399,9 @@ class AutoRestTest:
                         self.tui.print_step("Cache load failed for Header Agent", "warning")
                         loaded_header_from_shelf = False
 
+            # Value tables generated while every LLM query failed (e.g. the model
+            # server was not up) are not cached, so a restart regenerates them.
+            skip_cache = False
             if not loaded_value_from_shelf:
                 total_ops = len(operation_graph.operation_nodes)
                 with InitializationProgressDisplay(
@@ -410,6 +421,8 @@ class AutoRestTest:
                     f"Value Agent Q-table generated - Tokens: {token_counter.input_tokens:,} in / {token_counter.output_tokens:,} out",
                     "success",
                 )
+                self.print_llm_failures()
+                skip_cache = LanguageModel.produced_no_output()
 
             if self.config.enable_header_agent and not loaded_header_from_shelf:
                 total_ops = len(operation_graph.operation_nodes)
@@ -430,17 +443,24 @@ class AutoRestTest:
                     f"Header Agent Q-table generated - Tokens: {token_counter.input_tokens:,} in / {token_counter.output_tokens:,} out",
                     "success",
                 )
+                self.print_llm_failures()
             elif not self.config.enable_header_agent:
                 q_learning.header_agent.q_table = {}
 
-            try:
-                db[spec_name] = {
-                    "value": q_learning.value_agent.q_table,
-                    "header": q_learning.header_agent.q_table,
-                }
-                self.tui.print_step("Q-tables cached for future runs", "success")
-            except Exception:
-                self.tui.print_step("Failed to cache Q-tables", "warning")
+            if skip_cache:
+                self.tui.print_step(
+                    "Q-tables not cached: no LLM query succeeded, so the next run regenerates them",
+                    "warning",
+                )
+            else:
+                try:
+                    db[spec_name] = {
+                        "value": q_learning.value_agent.q_table,
+                        "header": q_learning.header_agent.q_table,
+                    }
+                    self.tui.print_step("Q-tables cached for future runs", "success")
+                except Exception:
+                    self.tui.print_step("Failed to cache Q-tables", "warning")
 
         output_q_table(q_learning, spec_name)
 

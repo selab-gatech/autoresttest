@@ -4,6 +4,7 @@ import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Set
+from urllib.parse import urlsplit
 
 from prance import ResolvingParser, ValidationError as PranceValidationError
 from openapi_spec_validator.validation.exceptions import (
@@ -112,7 +113,8 @@ class SpecificationParser:
         return parser_cls(
             spec_path,
             backend="openapi-spec-validator",  # AutoRestTest supports OAS 3.x
-            strict=True,
+            # Stringify non-string keys, such as unquoted YAML status codes (200:).
+            strict=False,
             recursion_limit=self.config.recursion_limit,
             recursion_limit_handler=default_recursive_limit_handler,
         )
@@ -134,6 +136,22 @@ class SpecificationParser:
         if not url:
             raise ValueError("Server URL is missing in the OpenAPI specification.")
         return url
+
+    def get_api_base_path(self) -> str:
+        """
+        Extract the path of the specification's server URL (e.g. "/petclinic/api"),
+        without a trailing slash. Returns "" when the server URL has no usable path.
+        """
+        try:
+            path = urlsplit(self.get_api_url()).path.rstrip("/")
+        except ValueError:
+            return ""
+        if "{" in path:
+            # Server variables are not resolved; keep the host-only URL.
+            return ""
+        if path and not path.startswith("/"):
+            path = "/" + path
+        return path
 
     def get_api_title(self) -> str | None:
         """
@@ -206,6 +224,45 @@ class SpecificationParser:
 
         return None
 
+    def _flatten_composition(self, schema: Dict) -> Dict:
+        """
+        Merge a schema's allOf sub-schemas (recursively) and the first option of its oneOf
+        and anyOf into a single schema, so composed schemas keep their type, properties
+        and required fields. Keys on the schema itself take precedence over its sub-schemas,
+        and earlier sub-schemas over later ones.
+        """
+        parts = [part for part in schema.get("allOf") or [] if isinstance(part, dict)]
+        for keyword in ("oneOf", "anyOf"):
+            options = [opt for opt in schema.get(keyword) or [] if isinstance(opt, dict)]
+            if options:
+                parts.append(options[0])
+        if not parts:
+            return schema
+
+        merged = {
+            key: value
+            for key, value in schema.items()
+            if key not in ("allOf", "oneOf", "anyOf")
+        }
+        properties: Dict[str, Any] = {}
+        required: List[str] = []
+        for part in [*(self._flatten_composition(part) for part in parts), schema]:
+            if isinstance(part.get("properties"), dict):
+                properties.update(part["properties"])
+            if isinstance(part.get("required"), list):
+                required += part["required"]
+            if part is not schema:
+                for key, value in part.items():
+                    if key not in ("properties", "required"):
+                        merged.setdefault(key, value)
+        if properties:
+            merged["properties"] = properties
+        if required:
+            merged["required"] = list(
+                dict.fromkeys(name for name in required if isinstance(name, str))
+            )
+        return merged
+
     def process_parameter_schema(
         self, schema: Dict | None, description: str | None = None
     ) -> SchemaProperties | None:
@@ -214,6 +271,7 @@ class SpecificationParser:
         """
         if not schema or not isinstance(schema, dict):
             return None
+        schema = self._flatten_composition(schema)
 
         value_properties = SchemaProperties(
             type=self._infer_schema_type(schema),
@@ -309,6 +367,7 @@ class SpecificationParser:
         """
         response_properties = {}
         for status_code, response_details in responses.items():
+            status_code = str(status_code)
             response_properties.setdefault(
                 status_code,
                 ResponseProperties(

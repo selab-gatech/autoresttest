@@ -1,4 +1,5 @@
 import unittest
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -136,6 +137,8 @@ class LlmTimeoutTests(unittest.TestCase):
             patch.object(get_config().llm, "timeout_seconds", 45),
             patch("autoresttest.llm.llm.OpenAI") as client,
             patch.object(LanguageModel, "cache", {}),
+            patch.object(LanguageModel, "failures", Counter()),
+            patch("builtins.print"),
         ):
             model = LanguageModel()
             self.assertEqual(client.call_args.kwargs["timeout"], 45)
