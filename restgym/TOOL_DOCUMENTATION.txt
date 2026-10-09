@@ -77,7 +77,9 @@ the specification at /specifications/<API>-openapi.json. It starts
 llama-server on a free local port, writes AutoRestTest's configuration, waits
 for the model, and runs AutoRestTest until RESTgym stops the container at the
 end of the time budget. If AutoRestTest exits early, the entrypoint restarts
-it, reusing the cached graph and Q-tables instead of repeating setup.
+it, reusing the cached graph and Q-tables instead of repeating setup. Q-tables
+generated while every LLM query failed are not cached, so a restart generates
+them again.
 
 To run the image by hand against an API already listening on localhost:9090:
 
@@ -111,7 +113,7 @@ The Dockerfile pins every download:
 
 - llama.cpp image ghcr.io/ggml-org/llama.cpp:server-cuda12-b11434, by digest.
 - Model revision d1c082be9cf3c8a514acf63b8761f4b41935842e, checked by SHA-256.
-- AutoRestTest commit f4fe85ca57e6da242084c2c2b4ae95c8d81d2b5d, downloaded
+- AutoRestTest commit 19e69456f37177547b5748a4d90bd6f18783ace2, downloaded
   from GitHub. Its source code is identical to the src/ folder in the
   rest-league-2027 tag; the tag only adds the restgym/ folder.
 - GloVe vectors and uv 0.12.23, checked by SHA-256.
