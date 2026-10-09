@@ -262,7 +262,8 @@ class AutoRestTest:
         self.tui.print_step("Specification parsed successfully!", "success")
 
         if self.config.api.override_url:
-            api_url = self.config.custom_api_url
+            # Keep the spec's base path (e.g. /api/v1); only the host and port change.
+            api_url = self.config.custom_api_url + spec_parser.get_api_base_path()
             self.tui.print_step(f"Using custom API URL: {api_url}", "info")
         else:
             api_url = get_api_url(spec_parser)

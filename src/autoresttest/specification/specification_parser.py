@@ -4,6 +4,7 @@ import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Set
+from urllib.parse import urlsplit
 
 from prance import ResolvingParser, ValidationError as PranceValidationError
 from openapi_spec_validator.validation.exceptions import (
@@ -134,6 +135,22 @@ class SpecificationParser:
         if not url:
             raise ValueError("Server URL is missing in the OpenAPI specification.")
         return url
+
+    def get_api_base_path(self) -> str:
+        """
+        Extract the path of the specification's server URL (e.g. "/petclinic/api"),
+        without a trailing slash. Returns "" when the server URL has no usable path.
+        """
+        try:
+            path = urlsplit(self.get_api_url()).path.rstrip("/")
+        except ValueError:
+            return ""
+        if "{" in path:
+            # Server variables are not resolved; keep the host-only URL.
+            return ""
+        if path and not path.startswith("/"):
+            path = "/" + path
+        return path
 
     def get_api_title(self) -> str | None:
         """

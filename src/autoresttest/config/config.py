@@ -181,8 +181,8 @@ class Config(BaseModel):
 
     @property
     def custom_api_url(self) -> str:
-        """Construct API URL from host and port."""
-        return f"http://{self.api.host}:{self.api.port}/"
+        """Construct the API origin from host and port, without a trailing slash."""
+        return f"http://{self.api.host}:{self.api.port}"
 
 
 def _load_raw_config(path: Path | str | None = None) -> Dict[str, Any]:

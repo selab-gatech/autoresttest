@@ -55,7 +55,8 @@ class RequestGenerator:
     def __init__(self, operation_graph: "OperationGraph", api_url: str, is_naive=True):
         self.operation_graph: "OperationGraph" = operation_graph
         self.config = operation_graph.config
-        self.api_url = api_url
+        # Endpoint paths start with "/", so a trailing slash here would produce "//".
+        self.api_url = api_url.rstrip("/")
         self.status_codes: Dict[int, StatusCode] = (
             {}
         )  # dictionary to track status code occurrences
