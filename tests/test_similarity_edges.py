@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 import numpy as np
 
+from autoresttest.agents import DataSourceAgent
 from autoresttest.graph import OperationGraph
 from autoresttest.graph.similarity_comparator import OperationDependencyComparator
 from autoresttest.models import (
@@ -84,10 +85,15 @@ class SimilarityEdgeTests(unittest.TestCase):
         for properties in operations.values():
             graph.add_operation_node(properties)
         graph.determine_dependencies(operations)
-        self.assertEqual(graph.operation_edges, [])
         edges = graph.operation_nodes["a"].outgoing_edges
         self.assertEqual([edge.destination.operation_id for edge in edges], ["b"])
         self.assertIn(("id", "query"), edges[0].similar_parameters)
+        # Promoted edges are graph edges, so the DEPENDENCY data source is offered.
+        self.assertEqual(
+            {(e.source.operation_id, e.destination.operation_id) for e in graph.operation_edges},
+            {("a", "b"), ("b", "a")},
+        )
+        self.assertIn("DEPENDENCY", DataSourceAgent(graph).available_data_sources)
 
 
 if __name__ == "__main__":

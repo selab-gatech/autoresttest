@@ -204,9 +204,11 @@ class OperationGraph:
                 and not self.operation_nodes[operation_id].outgoing_edges
             ):
                 # Assign top tentative edges to outgoing edges if there are no similar parameters
-                self.operation_nodes[operation_id].outgoing_edges = (
-                    self.operation_nodes[operation_id].tentative_edges
-                )
+                promoted_edges = list(self.operation_nodes[operation_id].tentative_edges)
+                self.operation_nodes[operation_id].outgoing_edges = promoted_edges
+                # Keep the graph's edge list complete; DataSourceAgent offers the
+                # DEPENDENCY source only when it is non-empty.
+                self.operation_edges.extend(promoted_edges)
 
     def create_graph(self, auto_validate: bool = True) -> None:
         operations: dict[str, OperationProperties] = (
