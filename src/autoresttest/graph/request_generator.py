@@ -706,7 +706,11 @@ class RequestGenerator:
                         completed_count += 1
                         if progress_callback:
                             progress_callback(result_op_id, completed_count)
-                except Exception:
+                except Exception as exc:
+                    print(
+                        f"Value table generation failed for operation {op_id}: "
+                        f"{type(exc).__name__}: {str(exc)[:300]}"
+                    )
                     # Still increment count on error to avoid stuck progress
                     with progress_lock:
                         completed_count += 1

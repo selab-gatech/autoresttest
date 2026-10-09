@@ -219,6 +219,7 @@ def output_report(
         + "%",
         "Number of Unique Server Errors": unique_errors,
         "Operations with Server Errors": q_learning.errors,
+        "Failed LLM Queries": LanguageModel.get_failures(),
     }
 
     with (output_dir / "report.json").open("w") as f:
@@ -332,6 +333,12 @@ class AutoRestTest:
 
         return operation_graph
 
+    def print_llm_failures(self):
+        failures = LanguageModel.get_failures()
+        if failures:
+            summary = ", ".join(f"{reason} x{count}" for reason, count in failures.items())
+            self.tui.print_step(f"Failed LLM queries: {summary}", "warning")
+
     def perform_q_learning(self, operation_graph: OperationGraph, spec_name: str):
         self.tui.print_phase_start(
             "Q-Table Initialization",
@@ -411,6 +418,7 @@ class AutoRestTest:
                     f"Value Agent Q-table generated - Tokens: {token_counter.input_tokens:,} in / {token_counter.output_tokens:,} out",
                     "success",
                 )
+                self.print_llm_failures()
 
             if self.config.enable_header_agent and not loaded_header_from_shelf:
                 total_ops = len(operation_graph.operation_nodes)
@@ -431,6 +439,7 @@ class AutoRestTest:
                     f"Header Agent Q-table generated - Tokens: {token_counter.input_tokens:,} in / {token_counter.output_tokens:,} out",
                     "success",
                 )
+                self.print_llm_failures()
             elif not self.config.enable_header_agent:
                 q_learning.header_agent.q_table = {}
 

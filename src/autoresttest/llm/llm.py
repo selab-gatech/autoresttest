@@ -1,5 +1,7 @@
+import math
 import os
 import threading
+from collections import Counter
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -31,9 +33,13 @@ class LanguageModel:
     output_tokens = 0
     cache = {}
 
+    # Failed queries by reason, e.g. {"APIConnectionError": 240}
+    failures: Counter = Counter()
+
     # Thread-safety locks for parallel value generation
     _cache_lock = threading.RLock()
     _token_lock = threading.RLock()
+    _failure_lock = threading.Lock()
 
     @staticmethod
     def get_tokens() -> TokenCounter:
@@ -41,6 +47,22 @@ class LanguageModel:
             input_tokens=LanguageModel.input_tokens,
             output_tokens=LanguageModel.output_tokens,
         )
+
+    @staticmethod
+    def get_failures() -> dict[str, int]:
+        with LanguageModel._failure_lock:
+            return dict(LanguageModel.failures)
+
+    def _report_failure(self, reason: str, detail: str) -> None:
+        """Print the first failure of each reason, then its 10th, 100th, ... occurrence."""
+        with LanguageModel._failure_lock:
+            LanguageModel.failures[reason] += 1
+            count = LanguageModel.failures[reason]
+        if count == 10 ** int(math.log10(count)):
+            print(
+                f"[LLM] Query failed: {reason} (occurrence {count}) from model "
+                f"{self.engine} at {self.config.llm_api_base}: {detail[:300]}"
+            )
 
     def __init__(
         self,
@@ -114,7 +136,8 @@ class LanguageModel:
         # The SDK owns retries; wrapping it in another retry loop multiplies attempts.
         try:
             response = self.client.chat.completions.create(**kwargs)
-        except Exception:
+        except Exception as exc:
+            self._report_failure(type(exc).__name__, str(exc))
             return ""
 
         input_tokens = 0
@@ -131,6 +154,7 @@ class LanguageModel:
             LanguageModel.output_tokens += output_tokens
 
         if not response.choices:
+            self._report_failure("NoChoices", "the response has no choices")
             return ""
         content = response.choices[0].message.content
         result = content.strip() if content else ""
