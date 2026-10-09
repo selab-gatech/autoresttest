@@ -1102,15 +1102,17 @@ class QLearning:
                                             dependency["dependent_operation"]
                                         ][dependency["dependent_val"]]
                                     )
-                    if select_params.req_params:
-                        for param in select_params.req_params:
-                            if param not in parameters or not parameters[param]:
-                                parameters[param] = (
-                                    supplement_parameters[param]
-                                    if supplement_parameters
-                                    and param in supplement_parameters
-                                    else random_generator()()
-                                )
+                # Fill required parameters that got no dependency value, including
+                # when the operation has no parameter dependencies at all.
+                if select_params.req_params:
+                    for param in select_params.req_params:
+                        if parameters.get(param) is None:
+                            parameters[param] = (
+                                supplement_parameters[param]
+                                if supplement_parameters
+                                and param in supplement_parameters
+                                else random_generator()()
+                            )
 
                 body = {}
                 dep_request_body = self.operation_graph.operation_nodes[
