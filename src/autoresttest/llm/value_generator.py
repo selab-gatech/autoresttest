@@ -508,7 +508,11 @@ class SmartValueGenerator:
             return {}
         parameters: Dict[ParameterKey, Any] = {}
         for parameter_name, parameter_value in schema.items():
+            # Try exact match first (e.g., "name::query"), then fallback to plain name (e.g., "name")
             param_key = self.parameter_lookup.get(parameter_name)
+            if param_key is None:
+                # Fallback: LLM may have stripped the ::location suffix
+                param_key = self.parameter_name_lookup.get(parameter_name)
             if param_key and param_key not in self.parameter_requirements_raw:
                 parameters[param_key] = parameter_value
         parameters.update(self.parameter_requirements_raw)

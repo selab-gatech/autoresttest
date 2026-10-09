@@ -19,6 +19,7 @@ Given a summary of an operation and its parameters schema from its OpenAPI Speci
         "[parameterN]": [valueN]
     }
 }
+IMPORTANT: Use the parameter keys EXACTLY as they appear in the SPECIFICATION object (the keys with "::" format combining name and location, e.g., "name::query", "productId::path"). Do NOT use plain parameter names without the location suffix.
 In the case where a given parameter is an object, use an object with keys to represent the object field names and values to represent their respective field values as the parameter value. 
 In the case where a given parameter is an array, use a list as the parameter value. Do not generate lists with more than two items.
 Do not solely rely on the given constraint values, and ensure you read the associated descriptions for maximum accuracy. Use any provided example values to guide your generation formatting. 
