@@ -1,0 +1,117 @@
+AutoRestTest: REST League 2027 tool documentation
+=================================================
+
+Source: https://github.com/selab-gatech/AutoRestTest (tag rest-league-2027)
+RESTgym tool folder: restgym/ in that tag (Dockerfile, entrypoint.sh,
+restgym-tool-config.yml; restgym/README.md has more detail)
+
+
+1. What the tool is
+-------------------
+
+AutoRestTest is a black-box REST API testing tool. It builds a semantic
+operation dependency graph from the OpenAPI specification, uses an LLM to
+generate parameter and request-body values, and selects requests with
+multi-agent reinforcement learning.
+
+For REST League 2027 the LLM runs locally inside the tool image: Google's
+4-bit QAT build of Gemma 4 26B-A4B (google/gemma-4-26B-A4B-it-qat-q4_0-gguf),
+served by llama.cpp's llama-server on the GPU. The model and all other
+dependencies are downloaded at build time, so a run needs no network access
+except to the API under test.
+
+
+2. Requirements
+---------------
+
+- x86-64 Linux host with Docker.
+- One NVIDIA GPU with 24 GB of memory (tested on an RTX 4090), with the
+  NVIDIA Container Toolkit installed so containers can use it.
+- Network access during the build to ghcr.io, huggingface.co, github.com and
+  PyPI. The image includes the 14.4 GB model file.
+- The container was tested with 8 CPUs and 16 GB of RAM.
+
+
+3. Installing into RESTgym
+--------------------------
+
+Get the tagged source, copy the three tool files into a tools/autoresttest/
+folder in RESTgym, and build the images with RESTgym's build script:
+
+    git clone --branch rest-league-2027 --depth 1 https://github.com/selab-gatech/AutoRestTest.git
+    mkdir -p RESTgym/tools/autoresttest
+    cp AutoRestTest/restgym/Dockerfile AutoRestTest/restgym/entrypoint.sh AutoRestTest/restgym/restgym-tool-config.yml RESTgym/tools/autoresttest/
+    cd RESTgym
+    ./restgym.sh b
+
+The tool slug is "autoresttest". The Dockerfile expects the RESTgym root as
+its build context (it copies ./tools/autoresttest/entrypoint.sh), which is
+what RESTgym's build script uses.
+
+The source is also available as an archive:
+https://github.com/selab-gatech/AutoRestTest/archive/refs/tags/rest-league-2027.zip
+
+
+4. GPU access
+-------------
+
+The tool container needs the GPU. RESTgym's public launcher starts tool
+containers without one, so pass it explicitly, for example with
+device_requests=[docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])]
+where the launcher creates the tool container, or --gpus all with docker run.
+
+If llama.cpp finds no CUDA device, the entrypoint does not start the model
+(generating values on the CPU would take most of the hour). AutoRestTest then
+still runs, but without LLM-generated values.
+
+
+5. Running
+----------
+
+Launch experiments with RESTgym as usual:
+
+    ./restgym.sh l
+
+The entrypoint reads RESTgym's API, HOST, PORT and TIME_BUDGET variables and
+the specification at /specifications/<API>-openapi.json. It starts
+llama-server on a free local port, writes AutoRestTest's configuration, waits
+for the model, and runs AutoRestTest until RESTgym stops the container at the
+end of the time budget. If AutoRestTest exits early, the entrypoint restarts
+it, reusing the cached graph and Q-tables instead of repeating setup.
+
+To run the image by hand against an API already listening on localhost:9090:
+
+    docker run --rm --gpus all --network host --memory 16g --cpus 8 \
+      -e API=pet-clinic -e HOST=localhost -e PORT=9090 -e TIME_BUDGET=60 \
+      -v "$PWD/apis/pet-clinic/specifications/pet-clinic-openapi.json:/specifications/pet-clinic-openapi.json:ro" \
+      restgym-autoresttest
+
+
+6. Checking that a run is healthy
+---------------------------------
+
+The tool's standard output starts with:
+
+- the devices llama.cpp found (for example "CUDA0: NVIDIA GeForce RTX 4090"),
+- "AutoRestTest configured: API=... target=... budget=...m llm=...",
+- "Model server ready." (or "No CUDA device found" / "Model server not
+  ready" if the model is not used).
+
+Setup (graph construction and LLM value generation) then takes roughly
+20 to 90 seconds, after which AutoRestTest prints one status line per minute
+with request counts and status codes. llama-server's log goes to standard
+error. The GPU is busy only during setup; the testing loop does not call the
+model.
+
+
+7. Pinned versions
+------------------
+
+The Dockerfile pins every download:
+
+- llama.cpp image ghcr.io/ggml-org/llama.cpp:server-cuda12-b11434, by digest.
+- Model revision d1c082be9cf3c8a514acf63b8761f4b41935842e, checked by SHA-256.
+- AutoRestTest commit f4fe85ca57e6da242084c2c2b4ae95c8d81d2b5d, downloaded
+  from GitHub. Its source code is identical to the src/ folder in the
+  rest-league-2027 tag; the tag only adds the restgym/ folder.
+- GloVe vectors and uv 0.12.23, checked by SHA-256.
