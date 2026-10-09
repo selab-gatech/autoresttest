@@ -427,77 +427,6 @@ class DependencyAgent(BaseAgent):
 
         return "EXPLORE", random_params, random_body
 
-    def update_q_table(
-        self,
-        operation_id: str,
-        dependent_params: dict[ParameterKey | str, dict[str, Any]] | None,
-        dependent_body: dict[str, dict[str, Any]] | None,
-        reward: float,
-    ) -> None:
-        if operation_id not in self.q_table:
-            return
-        if dependent_params:
-            for param, dependent in dependent_params.items():
-                current_q: float = 0
-                best_next_q: float = -np.inf
-                if not dependent["dependent_operation"]:
-                    continue
-                if param not in self.q_table[operation_id].get("params", {}):
-                    continue
-                if (
-                    dependent["dependent_operation"]
-                    not in self.q_table[operation_id]["params"][param]
-                ):
-                    continue
-                dep_op_dict = self.q_table[operation_id]["params"][param][
-                    dependent["dependent_operation"]
-                ]
-                for location, loc_params in dep_op_dict.items():
-                    for dependent_param, value in loc_params.items():
-                        if dependent_param == dependent["dependent_val"]:
-                            current_q = value
-                        best_next_q = max(best_next_q, value)
-                new_q = current_q + self.alpha * (
-                    reward + self.gamma * best_next_q - current_q
-                )
-                for location, loc_params in dep_op_dict.items():
-                    for dependent_param, value in loc_params.items():
-                        if dependent_param == dependent["dependent_val"]:
-                            self.q_table[operation_id]["params"][param][
-                                dependent["dependent_operation"]
-                            ][location][dependent_param] = new_q
-
-        if dependent_body:
-            for param, dependent in dependent_body.items():
-                current_q = 0.0
-                best_next_q = float(-np.inf)
-                if not dependent["dependent_operation"]:
-                    continue
-                if param not in self.q_table[operation_id].get("body", {}):
-                    continue
-                if (
-                    dependent["dependent_operation"]
-                    not in self.q_table[operation_id]["body"][param]
-                ):
-                    continue
-                dep_op_dict = self.q_table[operation_id]["body"][param][
-                    dependent["dependent_operation"]
-                ]
-                for location, loc_params in dep_op_dict.items():
-                    for dependent_param, value in loc_params.items():
-                        if dependent_param == dependent["dependent_val"]:
-                            current_q = value
-                        best_next_q = max(best_next_q, value)
-                new_q = current_q + self.alpha * (
-                    reward + self.gamma * best_next_q - current_q
-                )
-                for location, loc_params in dep_op_dict.items():
-                    for dependent_param, value in loc_params.items():
-                        if dependent_param == dependent["dependent_val"]:
-                            self.q_table[operation_id]["body"][param][
-                                dependent["dependent_operation"]
-                            ][location][dependent_param] = new_q
-
     def get_Q_next(
         self,
         operation_id: str,
@@ -552,6 +481,29 @@ class DependencyAgent(BaseAgent):
 
         return best_next_q_params, best_next_q_body
 
+    def _dependency_bucket(
+        self, operation_id: str, section: str, param: ParameterKey | str, dependent
+    ) -> DepParamDict | None:
+        """
+        Return the location bucket that holds the Q-value of `dependent`, or None.
+        The bucket is chosen by the dependency's in_value, so a body property and a
+        response field with the same name keep separate Q-values.
+        """
+        if operation_id not in self.q_table or not dependent["dependent_operation"]:
+            return None
+        dep_op_dict = (
+            self.q_table[operation_id]
+            .get(section, {})
+            .get(param, {})
+            .get(dependent["dependent_operation"])
+        )
+        if not dep_op_dict:
+            return None
+        bucket = dep_op_dict.get(dependent["in_value"])
+        if bucket is None or dependent["dependent_val"] not in bucket:
+            return None
+        return bucket
+
     def get_Q_curr(
         self,
         operation_id: str,
@@ -560,52 +512,14 @@ class DependencyAgent(BaseAgent):
     ) -> tuple[list[float], list[float]]:
         current_Q_params: list[float] = []
         current_Q_body: list[float] = []
-
-        if operation_id not in self.q_table:
-            return current_Q_params, current_Q_body
-
-        if dependent_params:
-            for param, dependent in dependent_params.items():
-                current_q: float = 0
-                if not dependent["dependent_operation"]:
-                    continue
-                if param not in self.q_table[operation_id].get("params", {}):
-                    continue
-                if (
-                    dependent["dependent_operation"]
-                    not in self.q_table[operation_id]["params"][param]
-                ):
-                    continue
-                dep_op_dict = self.q_table[operation_id]["params"][param][
-                    dependent["dependent_operation"]
-                ]
-                for location, loc_params in dep_op_dict.items():
-                    for dependent_param, value in loc_params.items():
-                        if dependent_param == dependent["dependent_val"]:
-                            current_q = value
-                current_Q_params.append(current_q)
-
-        if dependent_body:
-            for param, dependent in dependent_body.items():
-                current_q = 0.0
-                if not dependent["dependent_operation"]:
-                    continue
-                if param not in self.q_table[operation_id].get("body", {}):
-                    continue
-                if (
-                    dependent["dependent_operation"]
-                    not in self.q_table[operation_id]["body"][param]
-                ):
-                    continue
-                dep_op_dict = self.q_table[operation_id]["body"][param][
-                    dependent["dependent_operation"]
-                ]
-                for location, loc_params in dep_op_dict.items():
-                    for dependent_param, value in loc_params.items():
-                        if dependent_param == dependent["dependent_val"]:
-                            current_q = value
-                current_Q_body.append(current_q)
-
+        for section, dependents, current_Q in (
+            ("params", dependent_params, current_Q_params),
+            ("body", dependent_body, current_Q_body),
+        ):
+            for param, dependent in (dependents or {}).items():
+                bucket = self._dependency_bucket(operation_id, section, param, dependent)
+                if bucket is not None:
+                    current_Q.append(bucket[dependent["dependent_val"]])
         return current_Q_params, current_Q_body
 
     def update_Q_item(
@@ -615,49 +529,14 @@ class DependencyAgent(BaseAgent):
         dependent_body: dict[str, dict[str, Any]] | None,
         td_error: float,
     ) -> None:
-        if operation_id not in self.q_table:
-            return
-        if dependent_params:
-            for param, dependent in dependent_params.items():
-                if not dependent["dependent_operation"]:
-                    continue
-                if param not in self.q_table[operation_id].get("params", {}):
-                    continue
-                if (
-                    dependent["dependent_operation"]
-                    not in self.q_table[operation_id]["params"][param]
-                ):
-                    continue
-                dep_op_dict = self.q_table[operation_id]["params"][param][
-                    dependent["dependent_operation"]
-                ]
-                for location, loc_params in dep_op_dict.items():
-                    for dependent_param, value in loc_params.items():
-                        if dependent_param == dependent["dependent_val"]:
-                            self.q_table[operation_id]["params"][param][
-                                dependent["dependent_operation"]
-                            ][location][dependent_param] += (self.alpha * td_error)
-
-        if dependent_body:
-            for param, dependent in dependent_body.items():
-                if not dependent["dependent_operation"]:
-                    continue
-                if param not in self.q_table[operation_id].get("body", {}):
-                    continue
-                if (
-                    dependent["dependent_operation"]
-                    not in self.q_table[operation_id]["body"][param]
-                ):
-                    continue
-                dep_op_dict = self.q_table[operation_id]["body"][param][
-                    dependent["dependent_operation"]
-                ]
-                for location, loc_params in dep_op_dict.items():
-                    for dependent_param, value in loc_params.items():
-                        if dependent_param == dependent["dependent_val"]:
-                            self.q_table[operation_id]["body"][param][
-                                dependent["dependent_operation"]
-                            ][location][dependent_param] += (self.alpha * td_error)
+        for section, dependents in (
+            ("params", dependent_params),
+            ("body", dependent_body),
+        ):
+            for param, dependent in (dependents or {}).items():
+                bucket = self._dependency_bucket(operation_id, section, param, dependent)
+                if bucket is not None:
+                    bucket[dependent["dependent_val"]] += self.alpha * td_error
 
     def add_undocumented_responses(
         self, new_operation_response_id: str, new_property: str
