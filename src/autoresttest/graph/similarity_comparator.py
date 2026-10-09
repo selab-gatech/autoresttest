@@ -205,10 +205,10 @@ class OperationDependencyComparator:
 
         for parameter, similarities in parameter_matchings.items():
             for similarity in similarities:
-                if parameter not in similar_parameters:
-                    similar_parameters[parameter] = []
+                # Only parameters with a match above the threshold get an entry, so an
+                # operation pair without one falls back to a tentative edge.
                 if similarity.similarity > self.threshold:
-                    similar_parameters[parameter].append(similarity)
+                    similar_parameters.setdefault(parameter, []).append(similarity)
                 else:
                     next_most_similar_parameters.append((parameter, similarity))
 
