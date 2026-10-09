@@ -10,15 +10,16 @@ from autoresttest.graph.similarity_comparator import OperationDependencyComparat
 from autoresttest.models import (
     OperationProperties,
     ParameterProperties,
-    ResponseProperties,
     SchemaProperties,
 )
 
-# Unit vectors: "id" and "identifier" are close, "color" is unrelated.
+# Cosine similarities: id~identifier 0.95 (above the 0.8 threshold),
+# id~key 0.70 (between the 0.5 floor and the threshold), id~color 0 and key~color 0.
 VECTORS = {
-    "id": np.array([1.0, 0.0]),
-    "identifier": np.array([0.95, 0.31]),
-    "color": np.array([0.0, 1.0]),
+    "id": np.array([1.0, 0.0, 0.0]),
+    "identifier": np.array([0.95, 0.31, 0.0]),
+    "key": np.array([0.7, 0.0, 0.714]),
+    "color": np.array([0.0, 1.0, 0.0]),
 }
 
 
@@ -30,7 +31,7 @@ class StubModel:
         return VECTORS.get(text)
 
 
-def operation(operation_id, param, response_field):
+def operation(operation_id, param):
     return OperationProperties(
         operation_id=operation_id,
         endpoint_path=f"/{operation_id}",
@@ -40,16 +41,6 @@ def operation(operation_id, param, response_field):
                 name=param, in_value="query", schema=SchemaProperties(type="string")
             )
         },
-        responses={
-            "200": ResponseProperties(
-                content={
-                    "application/json": SchemaProperties(
-                        type="object",
-                        properties={response_field: SchemaProperties(type="string")},
-                    )
-                }
-            )
-        },
     )
 
 
@@ -57,21 +48,27 @@ class SimilarityEdgeTests(unittest.TestCase):
     def setUp(self):
         self.comparator = OperationDependencyComparator(StubModel())
 
-    def test_only_matches_above_the_threshold_are_similar(self):
+    def compare(self, param1, param2):
         similar, tentative = self.comparator.compare_cosine(
-            operation("a", "id", "color"), operation("b", "color", "color")
+            operation("a", param1), operation("b", param2)
         )
-        self.assertEqual(similar, {})
-        self.assertEqual([param for param, _ in tentative], [("id", "query")] * 2)
+        similar = {p: [sv.dependent_val for sv in svs] for p, svs in similar.items()}
+        tentative = [(p, sv.dependent_val) for p, sv in tentative]
+        return similar, tentative
 
-        similar, _ = self.comparator.compare_cosine(
-            operation("a", "id", "color"), operation("b", "identifier", "color")
-        )
-        self.assertEqual(list(similar), [("id", "query")])
+    def test_matches_above_the_threshold_are_similar(self):
         self.assertEqual(
-            [sv.dependent_val for sv in similar[("id", "query")]],
-            [("identifier", "query")],
+            self.compare("id", "identifier"),
+            ({("id", "query"): [("identifier", "query")]}, []),
         )
+
+    def test_matches_between_floor_and_threshold_are_tentative(self):
+        self.assertEqual(
+            self.compare("id", "key"), ({}, [(("id", "query"), ("key", "query"))])
+        )
+
+    def test_matches_below_the_floor_are_dropped(self):
+        self.assertEqual(self.compare("id", "color"), ({}, []))
 
     def test_unmatched_operations_fall_back_to_tentative_edges(self):
         graph = OperationGraph(
@@ -79,15 +76,21 @@ class SimilarityEdgeTests(unittest.TestCase):
         )
         graph.dependency_comparator = self.comparator
         operations = {
-            "a": operation("a", "id", "identifier"),
-            "b": operation("b", "color", "color"),
+            "a": operation("a", "id"),
+            "b": operation("b", "key"),
+            "c": operation("c", "color"),
         }
         for properties in operations.values():
             graph.add_operation_node(properties)
         graph.determine_dependencies(operations)
-        edges = graph.operation_nodes["a"].outgoing_edges
-        self.assertEqual([edge.destination.operation_id for edge in edges], ["b"])
-        self.assertIn(("id", "query"), edges[0].similar_parameters)
+
+        def destinations(op_id):
+            return [e.destination.operation_id for e in graph.operation_nodes[op_id].outgoing_edges]
+
+        # a and b fall back to each other; c has no match at or above the floor.
+        self.assertEqual(destinations("a"), ["b"])
+        self.assertEqual(destinations("b"), ["a"])
+        self.assertEqual(destinations("c"), [])
         # Promoted edges are graph edges, so the DEPENDENCY data source is offered.
         self.assertEqual(
             {(e.source.operation_id, e.destination.operation_id) for e in graph.operation_edges},
