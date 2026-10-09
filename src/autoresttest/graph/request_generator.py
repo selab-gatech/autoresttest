@@ -281,7 +281,12 @@ class RequestGenerator:
             response = self.create_and_send_request(
                 operation_node, allow_retry=True, permitted_retries=1
             )
-            if response is not None and response.response and not response.response.ok:
+            # requests.Response is falsy for 4xx/5xx, so compare with None explicitly.
+            if (
+                response is not None
+                and response.response is not None
+                and not response.response.ok
+            ):
                 failed_responses.append(response)
         if failed_responses:
             parameter_mappings, request_body_mappings = (
