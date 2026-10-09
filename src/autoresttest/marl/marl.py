@@ -153,10 +153,12 @@ class QLearning:
         body: dict[str, Any] | None,
         operation_id: str,
     ) -> tuple[dict[ParameterKey, Any] | None, dict[str, Any] | None]:
+        # successful_primitives maps each operation to a list of values; pick single values.
         possible_options = [
-            val
-            for key, val in self.successful_primitives.items()
+            value
+            for key, values in self.successful_primitives.items()
             if key != operation_id
+            for value in values
         ]
 
         if parameters:
