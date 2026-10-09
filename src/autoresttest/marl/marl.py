@@ -951,14 +951,18 @@ class QLearning:
 
         # Goal: Decay epsilon to 0.1 at 70% of the time duration
         target_epsilon = 0.1
-        epsilon_decay_rate = (
+        epsilon_decay_per_second = (
             (self.epsilon - target_epsilon) / (self.time_duration * 0.7)
             if target_epsilon < self.epsilon
             else 0
         )
 
-        while time.monotonic() < deadline:
-            self.epsilon_decay(epsilon_decay_rate)
+        last_decay_time = start_time
+        while (now := time.monotonic()) < deadline:
+            # Decay by elapsed time, not per request, so the schedule does not
+            # depend on how fast the API responds.
+            self.epsilon_decay(epsilon_decay_per_second * (now - last_decay_time))
+            last_decay_time = now
 
             operation_id = self.operation_agent.get_action()
 
