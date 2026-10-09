@@ -170,22 +170,27 @@ class ValueAgent(BaseAgent):
         best_Q_next_body: list[float] = []
         if operation_id not in self.q_table:
             return best_Q_next_params, best_Q_next_body
+        # Best next Q-value of each parameter and body on its own, not a running max.
         if filtered_action.param_mappings:
-            best_next_q = -np.inf
-            for param, value in filtered_action.param_mappings.items():
+            for param in filtered_action.param_mappings:
                 if param not in self.q_table[operation_id].get("params", {}):
                     continue
-                for mapping in self.q_table[operation_id]["params"][param]:
-                    best_next_q = max(best_next_q, mapping[1])
-                best_Q_next_params.append(best_next_q)
+                best_Q_next_params.append(
+                    max(
+                        (mapping[1] for mapping in self.q_table[operation_id]["params"][param]),
+                        default=0.0,
+                    )
+                )
         if filtered_action.body_mappings:
-            best_next_q = -np.inf
-            for mime, body in filtered_action.body_mappings.items():
+            for mime in filtered_action.body_mappings:
                 if mime not in self.q_table[operation_id].get("body", {}):
                     continue
-                for mapping in self.q_table[operation_id]["body"][mime]:
-                    best_next_q = max(best_next_q, mapping[1])
-                best_Q_next_body.append(best_next_q)
+                best_Q_next_body.append(
+                    max(
+                        (mapping[1] for mapping in self.q_table[operation_id]["body"][mime]),
+                        default=0.0,
+                    )
+                )
         return best_Q_next_params, best_Q_next_body
 
     def get_Q_curr(
