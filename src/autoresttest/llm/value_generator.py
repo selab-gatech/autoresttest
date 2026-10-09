@@ -422,11 +422,15 @@ class SmartValueGenerator:
         items = schema.get("items")
         if properties:
             # NOTE: We do not handle nested objects
-            nonreq_request_body = self._isolate_nonreq_params(properties)
+            nonreq_request_body = self._isolate_nonreq_params(
+                properties, is_request_body=True
+            )
         elif items:
             nonreq_request_body = self._isolate_nonreq_request_body(items)
         else:
-            nonreq_request_body = self._isolate_nonreq_params(schema)
+            # A body without properties (e.g. a string) has no fields to list; the
+            # schema's own keys ("type", "description") are not body fields.
+            nonreq_request_body = {}
         return nonreq_request_body
 
     def _form_parameter_gen_prompt(
