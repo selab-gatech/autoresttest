@@ -6,7 +6,7 @@ Everything is downloaded at build time, so a run needs no network access except 
 
 ## Files
 
-- `Dockerfile` builds on llama.cpp's CUDA 12 server image and adds the model, GloVe vectors (50- and 300-dimensional, see the Dockerfile), Python 3.10, and AutoRestTest at a pinned commit (`AUTORESTTEST_REF`).
+- `Dockerfile` builds on llama.cpp's CUDA 12 server image and adds the model, 300-dimensional GloVe vectors (saved in gensim's format, so they load in under a second), Python 3.10, and AutoRestTest at a pinned commit (`AUTORESTTEST_REF`).
 - `entrypoint.sh` starts `llama-server` on a free local port, writes `configurations.toml` from RESTgym's `API`, `HOST`, `PORT`, and `TIME_BUDGET` variables, waits for the model, then runs AutoRestTest in a restart loop. Graph and Q-table caching is on, so a restart reuses the setup from the same container instead of repeating it. Q-tables are not cached when every LLM query failed, so a restart generates them again.
 - `restgym-tool-config.yml` enables the tool in RESTgym.
 
