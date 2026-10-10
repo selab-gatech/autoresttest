@@ -364,8 +364,19 @@ class ConfigWizard:
             f"  [dim]Current API base: {self._default_config.llm_api_base}[/dim]"
         )
 
+        # Default to the configured provider, so Enter keeps the engine and API base.
+        current_provider = next(
+            (
+                name
+                for name, api_base in self.API_BASES.items()
+                if api_base == self._default_config.llm_api_base
+            ),
+            "Custom",
+        )
         provider_idx = self._select_option(
-            providers, "Select LLM provider", default_index=1
+            providers,
+            "Select LLM provider",
+            default_index=[name for name, _ in providers].index(current_provider),
         )
         provider = providers[provider_idx][0]
 
@@ -382,7 +393,19 @@ class ConfigWizard:
                 models = list(self.LLM_ENGINES[provider])
                 # Add custom model ID option for all providers
                 models.append(("custom", "Enter custom model ID"))
-                model_idx = self._select_option(models, "Select model", default_index=0)
+                model_ids = [model_id for model_id, _ in models]
+                if self._default_config.openai_llm_engine in model_ids:
+                    model_default = model_ids.index(
+                        self._default_config.openai_llm_engine
+                    )
+                elif provider == current_provider:
+                    # The custom entry's prompt defaults to the configured engine.
+                    model_default = model_ids.index("custom")
+                else:
+                    model_default = 0
+                model_idx = self._select_option(
+                    models, "Select model", default_index=model_default
+                )
 
                 if models[model_idx][0] == "custom":
                     # User wants to enter a custom model ID
@@ -409,7 +432,6 @@ class ConfigWizard:
         )
         if temp != self._default_config.creative_temperature:
             llm_config["creative_temperature"] = temp
-            llm_config["strict_temperature"] = temp
 
         # Max tokens
         max_tokens = self._prompt_value(
@@ -476,7 +498,7 @@ class ConfigWizard:
         durations = [
             ("300", "5 minutes - Quick test"),
             ("600", "10 minutes - Short run"),
-            ("1200", "20 minutes - Standard (default)"),
+            ("1200", "20 minutes - Standard"),
             ("1800", "30 minutes - Extended"),
             ("3600", "60 minutes - Long run"),
             ("custom", "Enter custom duration"),
@@ -485,7 +507,16 @@ class ConfigWizard:
         self.console.print(
             f"\n  [dim]Current duration: {self._default_config.request_generation.time_duration}s[/dim]"
         )
-        idx = self._select_option(durations, "Select test duration", default_index=2)
+        # Default to the configured duration: its preset, or "custom" to keep it.
+        duration_ids = [value for value, _ in durations]
+        current_duration = str(self._default_config.request_generation.time_duration)
+        idx = self._select_option(
+            durations,
+            "Select test duration",
+            default_index=duration_ids.index(
+                current_duration if current_duration in duration_ids else "custom"
+            ),
+        )
 
         if durations[idx][0] == "custom":
             duration = self._prompt_value(
@@ -561,9 +592,10 @@ class ConfigWizard:
             bool,
         )
 
-        if override_url:
-            api_config["override_url"] = True
+        if override_url != self._default_config.api.override_url:
+            api_config["override_url"] = override_url
 
+        if override_url:
             host = self._prompt_value(
                 "API Host",
                 self._default_config.api.host,
@@ -614,6 +646,7 @@ class ConfigWizard:
             bool,
         )
 
+        workers = self._default_config.value_generation_workers
         if parallelize:
             workers = self._prompt_value(
                 "Number of worker threads",
@@ -621,16 +654,16 @@ class ConfigWizard:
                 int,
             )
 
-            if (
-                parallelize != self._default_config.parallelize_value_generation
-                or workers != self._default_config.value_generation_workers
-            ):
-                if "agent" not in overrides:
-                    overrides["agent"] = {}
-                overrides["agent"]["value"] = {
-                    "parallelize": parallelize,
-                    "max_workers": workers,
-                }
+        if (
+            parallelize != self._default_config.parallelize_value_generation
+            or workers != self._default_config.value_generation_workers
+        ):
+            if "agent" not in overrides:
+                overrides["agent"] = {}
+            overrides["agent"]["value"] = {
+                "parallelize": parallelize,
+                "max_workers": workers,
+            }
 
         return overrides
 
