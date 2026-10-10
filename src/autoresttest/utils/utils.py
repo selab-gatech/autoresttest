@@ -217,8 +217,14 @@ def get_required_body_params(operation_body: SchemaProperties) -> Optional[Set]:
 
     if operation_body.properties and operation_body.type == "object":
         for key, value in operation_body.properties.items():
-            # Check if key is in the PARENT's required list (not child's required field)
-            if operation_body.required and key in operation_body.required:
+            # Check if key is in the PARENT's required list (not child's required field).
+            # A read-only property is required only in responses (OpenAPI 3.0), so a
+            # request may leave it out.
+            if (
+                operation_body.required
+                and key in operation_body.required
+                and not value.read_only
+            ):
                 required_body.add(key)
 
     elif operation_body.items and operation_body.type == "array":
