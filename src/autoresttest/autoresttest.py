@@ -1,9 +1,10 @@
 import argparse
 import json
+import os
 import shelve
 import sys
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from dotenv import load_dotenv
 
@@ -86,6 +87,17 @@ For more information, visit: https://github.com/tylerstennett/AutoRestTest
     return parser.parse_args()
 
 
+def write_json(path: Path, data: Any):
+    """Write through a temporary file, so an interrupted write keeps the previous file."""
+    temporary = path.with_name(path.name + ".tmp")
+    try:
+        with temporary.open("w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def output_q_table(q_learning: QLearning, spec_name: str):
     parameter_table = q_learning.parameter_agent.q_table
     body_obj_table = q_learning.body_object_agent.q_table
@@ -131,24 +143,26 @@ def output_q_table(q_learning: QLearning, spec_name: str):
     output_dir = ensure_output_dir(spec_name)
 
     q_tables_path = output_dir / "q_tables.json"
-    with q_tables_path.open("w") as f:
-        json.dump(compiled_q_table, f, indent=2)
+    write_json(q_tables_path, compiled_q_table)
 
 
 def output_successes(q_learning: QLearning, spec_name: str):
     output_dir = ensure_output_dir(spec_name)
 
-    with (output_dir / "successful_parameters.json").open("w") as f:
-        json.dump(to_dict_helper(q_learning.successful_parameters), f, indent=2)
+    write_json(
+        output_dir / "successful_parameters.json",
+        to_dict_helper(q_learning.successful_parameters),
+    )
 
-    with (output_dir / "successful_bodies.json").open("w") as f:
-        json.dump(q_learning.successful_bodies, f, indent=2)
+    write_json(output_dir / "successful_bodies.json", q_learning.successful_bodies)
 
-    with (output_dir / "successful_responses.json").open("w") as f:
-        json.dump(q_learning.successful_responses, f, indent=2)
+    write_json(
+        output_dir / "successful_responses.json", q_learning.successful_responses
+    )
 
-    with (output_dir / "successful_primitives.json").open("w") as f:
-        json.dump(q_learning.successful_primitives, f, indent=2)
+    write_json(
+        output_dir / "successful_primitives.json", q_learning.successful_primitives
+    )
 
 
 def output_errors(q_learning: QLearning, spec_name: str):
@@ -170,15 +184,16 @@ def output_errors(q_learning: QLearning, spec_name: str):
             if is_json_seriable(error):
                 seriable_errors[operation_idx].append(error)
 
-    with (output_dir / "server_errors.json").open("w") as f:
-        json.dump(seriable_errors, f, indent=2)
+    write_json(output_dir / "server_errors.json", seriable_errors)
 
 
 def output_operation_status_codes(q_learning: QLearning, spec_name: str):
     output_dir = ensure_output_dir(spec_name)
 
-    with (output_dir / "operation_status_codes.json").open("w") as f:
-        json.dump(q_learning.operation_response_counter, f, indent=2)
+    write_json(
+        output_dir / "operation_status_codes.json",
+        q_learning.operation_response_counter,
+    )
 
 
 def output_report(
@@ -222,8 +237,17 @@ def output_report(
         "Failed LLM Queries": LanguageModel.get_failures(),
     }
 
-    with (output_dir / "report.json").open("w") as f:
-        json.dump(report_content, f, indent=2)
+    write_json(output_dir / "report.json", report_content)
+
+
+def write_outputs(
+    q_learning: QLearning, spec_name: str, spec_parser: SpecificationParser
+):
+    output_q_table(q_learning, spec_name)
+    output_successes(q_learning, spec_name)
+    output_errors(q_learning, spec_name)
+    output_operation_status_codes(q_learning, spec_name)
+    output_report(q_learning, spec_name, spec_parser)
 
 
 def parse_specification_location(spec_loc: str):
@@ -470,7 +494,22 @@ class AutoRestTest:
             f"Testing API for {self.config.request_generation.time_duration} seconds using Multi-Agent Reinforcement Learning",
         )
 
-        q_learning.run()
+        try:
+            q_learning.run()
+        except BaseException:
+            # Keep what was learned when testing stops early (Ctrl+C or an error).
+            self.tui.print_step(
+                f"Testing stopped early; saving results so far to data/{spec_name}/...",
+                "warning",
+            )
+            try:
+                write_outputs(q_learning, spec_name, operation_graph.spec_parser)
+            except Exception as error:
+                # Re-raise the original exception, not the failed save.
+                self.tui.print_step(f"Could not save results: {error}", "error")
+            else:
+                self.tui.print_step(f"Results saved to: data/{spec_name}/", "info")
+            raise
 
         self.tui.print_phase_complete("Request Generation")
 
@@ -521,11 +560,7 @@ class AutoRestTest:
         operation_graph = self.generate_graph(spec_name, ext, embedding_model)
         q_learning = self.perform_q_learning(operation_graph, spec_name)
         self.print_performance(q_learning, operation_graph.spec_parser)
-        output_q_table(q_learning, spec_name)
-        output_successes(q_learning, spec_name)
-        output_errors(q_learning, spec_name)
-        output_operation_status_codes(q_learning, spec_name)
-        output_report(q_learning, spec_name, operation_graph.spec_parser)
+        write_outputs(q_learning, spec_name, operation_graph.spec_parser)
 
         self.tui.print_success("AutoRestTest completed successfully!")
         self.tui.print_step(f"Results saved to: data/{spec_name}/", "info")
