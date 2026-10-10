@@ -809,23 +809,22 @@ class QLearning:
                 if not body_properties:
                     continue
                 if body_properties.properties:
-                    for prop in body_properties.properties:
-                        prop_type = getattr(
-                            body_properties.properties[prop], "type", None
-                        )
+                    # Build one object with every property, not one object per property.
+                    body_object = {}
+                    for prop, prop_schema in body_properties.properties.items():
+                        prop_type = getattr(prop_schema, "type", None)
                         if random.random() < 0.75 and prop_type:
-                            body[mime_type] = {prop: _safe_default(prop_type)}
+                            body_object[prop] = _safe_default(prop_type)
                         elif prop_type:
                             generator = identify_generator(prop_type)
-                            body[mime_type] = {
-                                prop: (
-                                    generator()
-                                    if callable(generator)
-                                    else random_generator()()
-                                )
-                            }
+                            body_object[prop] = (
+                                generator()
+                                if callable(generator)
+                                else random_generator()()
+                            )
                         else:
-                            body[mime_type] = {prop: random_generator()()}
+                            body_object[prop] = random_generator()()
+                    body[mime_type] = body_object
                 elif body_properties.items:
                     item_type = getattr(body_properties.items, "type", None)
                     if random.random() < 0.75 and item_type:
