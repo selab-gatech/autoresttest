@@ -4,7 +4,9 @@ import itertools
 import json
 import math
 import random
+import re
 import time
+import unicodedata
 from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, cast
@@ -701,6 +703,13 @@ def load_glove_vectors() -> KeyedVectors:
     return cast(KeyedVectors, load(GLOVE_MODEL))
 
 
+# A lowercase letter or digit before a capital, or an acronym before a capitalized word
+# ("HTTPServer") but not before a plural s ("userIDs"). Only ASCII case changes split.
+_WORD_BOUNDARY = re.compile(
+    r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])(?![A-Z]s(?![a-z]))"
+)
+
+
 class EmbeddingModel:
     def __init__(self):
         self.model: KeyedVectors = load_glove_vectors()
@@ -725,16 +734,15 @@ class EmbeddingModel:
 
     @staticmethod
     def handle_word_cases(parameter):
-        reconstructed_parameter = []
-        for index, char in enumerate(parameter):
-            if char == "_" or char == "-":
-                reconstructed_parameter.append(" ")
-            elif char.isalpha():
-                if char.isupper() and index != 0:
-                    reconstructed_parameter.append(" " + char.lower())
-                else:
-                    reconstructed_parameter.append(char)
-        return "".join(reconstructed_parameter)
+        """
+        Split a name into lowercase words, as the vectors are lowercase: "userID" becomes
+        "user id", "HTTPServer" "http server" and "filter[name]" "filter name".
+        """
+        # NFC keeps an accent and its letter together, as one character.
+        spaced = _WORD_BOUNDARY.sub(" ", unicodedata.normalize("NFC", parameter))
+        # Runs of non-word characters, digits and underscores become spaces; letters,
+        # including non-ASCII ones, are kept.
+        return " ".join(re.sub(r"[\W\d_]+", " ", spaced).lower().split())
 
 
 def construct_db_dir():
