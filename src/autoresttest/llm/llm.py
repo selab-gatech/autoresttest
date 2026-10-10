@@ -22,6 +22,12 @@ def is_local_endpoint(api_base: str) -> bool:
     return urlparse(api_base).hostname in LOCAL_HOSTS
 
 
+def _token_count(usage, field: str) -> int:
+    """A token count from the reply's usage, or 0 if it is missing or not an integer."""
+    count = getattr(usage, field, 0)
+    return count if isinstance(count, int) and not isinstance(count, bool) else 0
+
+
 @dataclass
 class TokenCounter:
     input_tokens: int = 0
@@ -147,12 +153,19 @@ class LanguageModel:
         except Exception as exc:
             self._report_failure(type(exc).__name__, str(exc))
             return ""
+        if not hasattr(response, "choices"):
+            # A proxy or a wrong base URL can answer 200 with an HTML page or other text,
+            # which the SDK returns as a string (or a list, number or None) instead of a
+            # completion.
+            self._report_failure(
+                "InvalidResponse", f"not a chat completion: {str(response)[:200]!r}"
+            )
+            return ""
 
-        input_tokens = 0
-        output_tokens = 0
-        if response.usage is not None:
-            input_tokens = getattr(response.usage, "prompt_tokens", 0) or 0
-            output_tokens = getattr(response.usage, "completion_tokens", 0) or 0
+        # The SDK does not validate the reply, so any field can hold any JSON value.
+        usage = getattr(response, "usage", None)
+        input_tokens = _token_count(usage, "prompt_tokens")
+        output_tokens = _token_count(usage, "completion_tokens")
 
         # print(f"[LLM] Input tokens: {input_tokens}, Output tokens: {output_tokens}")
 
@@ -161,13 +174,34 @@ class LanguageModel:
             LanguageModel.input_tokens += input_tokens
             LanguageModel.output_tokens += output_tokens
 
-        if not response.choices:
-            self._report_failure("NoChoices", "the response has no choices")
+        choices = response.choices if isinstance(response.choices, list) else []
+        choice = choices[0] if choices else None
+        if choice is None:
+            # A gateway can answer 200 with an error object instead of choices.
+            error = getattr(response, "error", None)
+            detail = "the response has no choices"
+            if error:
+                detail = f"{detail}, error: {str(error)[:200]}"
+            self._report_failure("NoChoices", detail)
+            return ""
+        message = getattr(choice, "message", None)
+        content = getattr(message, "content", None)
+        if content is not None and not isinstance(content, str):
+            self._report_failure(
+                "InvalidResponse", f"the message content is a {type(content).__name__}"
+            )
+            return ""
+        result = content.strip() if content else ""
+        if not result:
+            # A model can spend its whole token budget on reasoning and return no text.
+            # Report that as a failure, and don't count or cache it.
+            detail = f"finish_reason={getattr(choice, 'finish_reason', None)}"
+            if message is None:
+                detail = f"the response has no message, {detail}"
+            self._report_failure("EmptyContent", detail)
             return ""
         with LanguageModel._token_lock:
             LanguageModel.successful_queries += 1
-        content = response.choices[0].message.content
-        result = content.strip() if content else ""
 
         # Thread-safe cache write
         with LanguageModel._cache_lock:

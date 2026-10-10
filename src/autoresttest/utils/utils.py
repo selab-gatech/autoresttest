@@ -3,11 +3,17 @@ import hashlib
 import itertools
 import json
 import math
+import os
 import random
+import re
+import shutil
+import tempfile
 import time
+import unicodedata
 from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, cast
+from urllib.parse import quote
 
 import numpy as np
 import requests
@@ -217,8 +223,14 @@ def get_required_body_params(operation_body: SchemaProperties) -> Optional[Set]:
 
     if operation_body.properties and operation_body.type == "object":
         for key, value in operation_body.properties.items():
-            # Check if key is in the PARENT's required list (not child's required field)
-            if operation_body.required and key in operation_body.required:
+            # Check if key is in the PARENT's required list (not child's required field).
+            # A read-only property is required only in responses (OpenAPI 3.0), so a
+            # request may leave it out.
+            if (
+                operation_body.required
+                and key in operation_body.required
+                and not value.read_only
+            ):
                 required_body.add(key)
 
     elif operation_body.items and operation_body.type == "array":
@@ -296,6 +308,40 @@ def _header_or_cookie_value(value: Any) -> str:
     return json.dumps(value, default=str)
 
 
+def _url_value(value: Any) -> Any:
+    """Booleans become true/false and objects compact JSON, as servers expect in URLs."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, separators=(",", ":"), default=str)
+    return value
+
+
+def query_value(value: Any) -> Any:
+    """
+    A query or form value as requests should send it. A list goes out as repeated
+    name=value pairs, the OpenAPI default; a dict would otherwise lose its values, as
+    requests sends only its keys.
+    """
+    if isinstance(value, list):
+        return [_url_value(item) for item in value]
+    return _url_value(value)
+
+
+def fill_path(endpoint_path: str, path_params: Dict[str, Any]) -> str:
+    """
+    Put percent-encoded values into the path template, so a "/" or "#" in a value stays
+    in its segment. A list becomes a,b, the OpenAPI default, without its None items.
+    """
+    for name, value in path_params.items():
+        items = value if isinstance(value, list) else [value]
+        text = ",".join(
+            quote(str(_url_value(item)), safe="") for item in items if item is not None
+        )
+        endpoint_path = endpoint_path.replace("{" + name + "}", text)
+    return endpoint_path
+
+
 def split_parameter_values(
     operation_parameters: Dict[ParameterKey, ParameterProperties],
     provided_values: Optional[Dict[ParameterKey, Any]],
@@ -306,7 +352,8 @@ def split_parameter_values(
     Ignores parameters that are not defined on the operation, unless include_undefined is set: then
     (name, location) keys the operation does not define, such as mutated parameter names or
     locations, are sent in their query, header or cookie location.
-    Header and cookie values are converted to strings.
+    Header and cookie values are converted to strings, and query values to what requests
+    should send (see query_value). Path values stay as they are for fill_path.
     """
     path_params: Dict[str, Any] = {}
     query_params: Dict[str, Any] = {}
@@ -351,7 +398,7 @@ def split_parameter_values(
         elif in_value == "cookie":
             cookie_params[name] = _header_or_cookie_value(value)
         else:
-            query_params[name] = value
+            query_params[name] = query_value(value)
 
     return path_params, query_params, header_params, cookie_params
 
@@ -467,9 +514,13 @@ def _dispatch_request_inner(
 
     if "x-www-form-urlencoded" in mime_lower:
         headers.setdefault("Content-Type", mime_type)
-        body_data = get_object_shallow_mappings(payload)
-        if not body_data or not isinstance(body_data, dict):
-            body_data = {"data": payload}
+        # An empty object is an empty form, not a "data" field.
+        body_data = (
+            payload
+            if isinstance(payload, dict)
+            else get_object_shallow_mappings(payload) or {"data": payload}
+        )
+        body_data = {key: query_value(value) for key, value in body_data.items()}
         return select_method(
             full_url,
             params=params,
@@ -621,6 +672,55 @@ def is_json_seriable(data):
         return False
 
 
+def _with_string_keys(value: Any) -> Any:
+    """Copy nested dicts with non-string keys (e.g. ParameterKey tuples) as repr strings."""
+    if isinstance(value, dict):
+        return {
+            key if isinstance(key, str) else repr(key): _with_string_keys(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_with_string_keys(item) for item in value]
+    return value
+
+
+def _value_fingerprint(value: Any) -> Any:
+    """
+    Return a hashable key for a JSON-like value. Dicts that differ only in key order get
+    the same key; unlike ==, True and 1, False and 0, and 1 and 1.0 get different keys.
+    Containers are keyed by a 16-byte digest of their JSON, which bounds memory use.
+    """
+    if value is None or isinstance(value, (str, int, float)):  # bool is an int
+        return (type(value).__name__, value)
+    try:
+        text = json.dumps(value, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        text = json.dumps(_with_string_keys(value), sort_keys=True, default=str)
+    return hashlib.blake2b(text.encode(), digest_size=16).digest()
+
+
+class UniqueValues(list):
+    """
+    A list that skips values it already holds. Membership is checked against a set of
+    fingerprints, so adding costs one fingerprint of the value, not a scan of the list.
+    """
+
+    def __init__(self, values: Iterable[Any] = ()):
+        super().__init__()
+        self._seen: Set[Any] = set()
+        for value in values:
+            self.add(value)
+
+    def add(self, value: Any) -> bool:
+        """Append the value unless an equal one is present; return whether it was added."""
+        key = _value_fingerprint(value)
+        if key in self._seen:
+            return False
+        self._seen.add(key)
+        self.append(value)
+        return True
+
+
 def get_response_text_prefix(response: requests.Response, max_bytes: int = 1000) -> str:
     """Decode only the start of a response body.
 
@@ -634,22 +734,76 @@ def get_response_text_prefix(response: requests.Response, max_bytes: int = 1000)
         return prefix.decode("utf-8", errors="replace")
 
 
-GLOVE_MODEL = "glove-wiki-gigaword-50"
+GLOVE_MODEL = "glove-wiki-gigaword-300"
+# gensim's own format, which loads in well under a second; parsing the text takes about 20 s.
+SAVED_VECTORS_DIR = "keyed-vectors"
 
 
 def load_glove_vectors() -> KeyedVectors:
+    model_dir = Path(BASE_DIR) / GLOVE_MODEL
+    saved_path = model_dir / SAVED_VECTORS_DIR / f"{GLOVE_MODEL}.kv"
+    try:
+        if saved_path.is_file():
+            return KeyedVectors.load(str(saved_path), mmap="r")
+    except Exception as error:  # e.g. truncated, unreadable, or from an incompatible numpy
+        print(
+            f"Could not load the saved vectors in {saved_path.parent} ({error}); "
+            "parsing the text vectors instead. Delete that folder to save them again."
+        )
     # gensim's load() fetches its online catalog on every call, even when the
     # vectors are cached, so read the cached file directly when it exists.
-    cached_path = Path(BASE_DIR) / GLOVE_MODEL / f"{GLOVE_MODEL}.gz"
+    cached_path = model_dir / f"{GLOVE_MODEL}.gz"
     if cached_path.is_file():
-        return KeyedVectors.load_word2vec_format(str(cached_path))
-    return cast(KeyedVectors, load(GLOVE_MODEL))
+        vectors = KeyedVectors.load_word2vec_format(str(cached_path))
+    else:
+        vectors = cast(KeyedVectors, load(GLOVE_MODEL))
+    _save_vectors(vectors, saved_path)
+    return vectors
+
+
+def _save_vectors(vectors: KeyedVectors, saved_path: Path) -> None:
+    """
+    Save the vectors in gensim's format for later runs. They are written to a temporary
+    folder that is then renamed, so a run that starts meanwhile never loads half of them.
+    """
+    temporary = None
+    try:
+        saved_path.parent.parent.mkdir(parents=True, exist_ok=True)
+        temporary = Path(
+            tempfile.mkdtemp(
+                prefix=f"{saved_path.parent.name}.",
+                suffix=".tmp",
+                dir=saved_path.parent.parent,
+            )
+        )
+        # A separate array file is what load(mmap="r") maps instead of reading.
+        vectors.save(str(temporary / saved_path.name), separately=["vectors"])
+        # mkdtemp makes the folder private; others sharing the cache need to read it.
+        temporary.chmod(0o755)
+        temporary.rename(saved_path.parent)
+    except OSError:
+        pass  # a read-only cache, or another run saved first: the text is parsed next time
+    finally:
+        if temporary is not None:
+            shutil.rmtree(temporary, ignore_errors=True)
+
+
+# A lowercase letter or digit before a capital, or an acronym before a capitalized word
+# ("HTTPServer") but not before a plural s ("userIDs"). Only ASCII case changes split.
+_WORD_BOUNDARY = re.compile(
+    r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])(?![A-Z]s(?![a-z]))"
+)
 
 
 class EmbeddingModel:
     def __init__(self):
         self.model: KeyedVectors = load_glove_vectors()
-        self.threshold = 0.8
+        # Cutoffs for these vectors, calibrated on about 2,000 name pairs from the 17 RESTgym
+        # specs that an LLM judge labeled as the same kind of value or not. Above 0.7 is a
+        # match (the best F1). The floor for fallback edges admits the same share of compared
+        # pairs as 0.5 did with the 50-dimensional vectors.
+        self.threshold = 0.7
+        self.tentative_floor = 0.26
         self._embedding_cache: Dict[str, Optional[np.ndarray]] = {}
 
     def encode_sentence_or_word(self, thing: str) -> Optional[np.ndarray]:
@@ -670,16 +824,15 @@ class EmbeddingModel:
 
     @staticmethod
     def handle_word_cases(parameter):
-        reconstructed_parameter = []
-        for index, char in enumerate(parameter):
-            if char == "_" or char == "-":
-                reconstructed_parameter.append(" ")
-            elif char.isalpha():
-                if char.isupper() and index != 0:
-                    reconstructed_parameter.append(" " + char.lower())
-                else:
-                    reconstructed_parameter.append(char)
-        return "".join(reconstructed_parameter)
+        """
+        Split a name into lowercase words, as the vectors are lowercase: "userID" becomes
+        "user id", "HTTPServer" "http server" and "filter[name]" "filter name".
+        """
+        # NFC keeps an accent and its letter together, as one character.
+        spaced = _WORD_BOUNDARY.sub(" ", unicodedata.normalize("NFC", parameter))
+        # Runs of non-word characters, digits and underscores become spaces; letters,
+        # including non-ASCII ones, are kept.
+        return " ".join(re.sub(r"[\W\d_]+", " ", spaced).lower().split())
 
 
 def construct_db_dir():
