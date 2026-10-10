@@ -164,10 +164,19 @@ class LanguageModel:
         if not response.choices:
             self._report_failure("NoChoices", "the response has no choices")
             return ""
+        choice = response.choices[0]
+        content = choice.message.content if choice.message is not None else None
+        result = content.strip() if content else ""
+        if not result:
+            # A model can spend its whole token budget on reasoning and return no text.
+            # Report that as a failure, and don't count or cache it.
+            detail = f"finish_reason={choice.finish_reason}"
+            if choice.message is None:
+                detail = f"the response has no message, {detail}"
+            self._report_failure("EmptyContent", detail)
+            return ""
         with LanguageModel._token_lock:
             LanguageModel.successful_queries += 1
-        content = response.choices[0].message.content
-        result = content.strip() if content else ""
 
         # Thread-safe cache write
         with LanguageModel._cache_lock:

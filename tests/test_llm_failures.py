@@ -19,6 +19,7 @@ class LlmFailureLoggingTests(unittest.TestCase):
         LanguageModel.failures.clear()
         LanguageModel.cache.clear()
         self.addCleanup(LanguageModel.failures.clear)
+        self.addCleanup(LanguageModel.cache.clear)
 
     def failing_model(self, error):
         model = LanguageModel(config=CONFIG)
@@ -39,7 +40,7 @@ class LlmFailureLoggingTests(unittest.TestCase):
         self.assertIn("connection refused", lines[0])
         self.assertIn("(occurrence 10)", lines[1])
 
-    def test_empty_responses_are_counted(self):
+    def test_responses_without_choices_are_counted(self):
         model = self.failing_model(None)
         model.client.chat.completions.create.side_effect = None
         model.client.chat.completions.create.return_value = SimpleNamespace(
@@ -48,6 +49,55 @@ class LlmFailureLoggingTests(unittest.TestCase):
         with patch("builtins.print"):
             self.assertEqual(model.query("prompt"), "")
         self.assertEqual(LanguageModel.get_failures(), {"NoChoices": 1})
+
+    def replying_model(self, *messages):
+        model = self.failing_model(None)
+        model.client.chat.completions.create.side_effect = [
+            SimpleNamespace(
+                usage=None,
+                choices=[SimpleNamespace(message=message, finish_reason="length")],
+            )
+            for message in messages
+        ]
+        return model
+
+    def test_empty_content_is_a_failure_and_is_not_cached(self):
+        model = self.replying_model(
+            SimpleNamespace(content=None),
+            SimpleNamespace(content="  \n"),
+            None,
+            SimpleNamespace(content='{"id": 1}'),
+        )
+        with (
+            patch.object(LanguageModel, "successful_queries", 0),
+            patch("builtins.print") as printed,
+        ):
+            # The same prompt is sent again each time, as nothing was cached.
+            results = [model.query("prompt") for _ in range(4)]
+            self.assertEqual(LanguageModel.successful_queries, 1)
+        self.assertEqual(results, ["", "", "", '{"id": 1}'])
+        self.assertEqual(LanguageModel.get_failures(), {"EmptyContent": 3})
+        self.assertIn("finish_reason=length", printed.call_args_list[0].args[0])
+        self.assertEqual(model.query("prompt"), '{"id": 1}')  # now from the cache
+
+    def test_a_reply_without_a_message_is_reported(self):
+        model = self.replying_model(None)
+        with patch("builtins.print") as printed:
+            self.assertEqual(model.query("prompt"), "")
+        self.assertEqual(LanguageModel.get_failures(), {"EmptyContent": 1})
+        self.assertIn(
+            "the response has no message, finish_reason=length",
+            printed.call_args.args[0],
+        )
+
+    def test_only_empty_replies_count_as_no_output(self):
+        model = self.replying_model(SimpleNamespace(content=""))
+        with (
+            patch.object(LanguageModel, "successful_queries", 0),
+            patch("builtins.print"),
+        ):
+            model.query("prompt")
+            self.assertTrue(LanguageModel.produced_no_output())
 
     def test_failed_value_table_operations_are_printed(self):
         graph = OperationGraph("unused", "probe", SimpleNamespace(config=CONFIG), Mock())
