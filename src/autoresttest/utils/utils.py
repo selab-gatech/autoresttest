@@ -3,8 +3,11 @@ import hashlib
 import itertools
 import json
 import math
+import os
 import random
 import re
+import shutil
+import tempfile
 import time
 import unicodedata
 from functools import partial
@@ -731,16 +734,58 @@ def get_response_text_prefix(response: requests.Response, max_bytes: int = 1000)
         return prefix.decode("utf-8", errors="replace")
 
 
-GLOVE_MODEL = "glove-wiki-gigaword-50"
+GLOVE_MODEL = "glove-wiki-gigaword-300"
+# gensim's own format, which loads in well under a second; parsing the text takes about 20 s.
+SAVED_VECTORS_DIR = "keyed-vectors"
 
 
 def load_glove_vectors() -> KeyedVectors:
+    model_dir = Path(BASE_DIR) / GLOVE_MODEL
+    saved_path = model_dir / SAVED_VECTORS_DIR / f"{GLOVE_MODEL}.kv"
+    try:
+        if saved_path.is_file():
+            return KeyedVectors.load(str(saved_path), mmap="r")
+    except Exception as error:  # e.g. truncated, unreadable, or from an incompatible numpy
+        print(
+            f"Could not load the saved vectors in {saved_path.parent} ({error}); "
+            "parsing the text vectors instead. Delete that folder to save them again."
+        )
     # gensim's load() fetches its online catalog on every call, even when the
     # vectors are cached, so read the cached file directly when it exists.
-    cached_path = Path(BASE_DIR) / GLOVE_MODEL / f"{GLOVE_MODEL}.gz"
+    cached_path = model_dir / f"{GLOVE_MODEL}.gz"
     if cached_path.is_file():
-        return KeyedVectors.load_word2vec_format(str(cached_path))
-    return cast(KeyedVectors, load(GLOVE_MODEL))
+        vectors = KeyedVectors.load_word2vec_format(str(cached_path))
+    else:
+        vectors = cast(KeyedVectors, load(GLOVE_MODEL))
+    _save_vectors(vectors, saved_path)
+    return vectors
+
+
+def _save_vectors(vectors: KeyedVectors, saved_path: Path) -> None:
+    """
+    Save the vectors in gensim's format for later runs. They are written to a temporary
+    folder that is then renamed, so a run that starts meanwhile never loads half of them.
+    """
+    temporary = None
+    try:
+        saved_path.parent.parent.mkdir(parents=True, exist_ok=True)
+        temporary = Path(
+            tempfile.mkdtemp(
+                prefix=f"{saved_path.parent.name}.",
+                suffix=".tmp",
+                dir=saved_path.parent.parent,
+            )
+        )
+        # A separate array file is what load(mmap="r") maps instead of reading.
+        vectors.save(str(temporary / saved_path.name), separately=["vectors"])
+        # mkdtemp makes the folder private; others sharing the cache need to read it.
+        temporary.chmod(0o755)
+        temporary.rename(saved_path.parent)
+    except OSError:
+        pass  # a read-only cache, or another run saved first: the text is parsed next time
+    finally:
+        if temporary is not None:
+            shutil.rmtree(temporary, ignore_errors=True)
 
 
 # A lowercase letter or digit before a capital, or an acronym before a capitalized word
@@ -753,7 +798,12 @@ _WORD_BOUNDARY = re.compile(
 class EmbeddingModel:
     def __init__(self):
         self.model: KeyedVectors = load_glove_vectors()
-        self.threshold = 0.8
+        # Cutoffs for these vectors, calibrated on about 2,000 name pairs from the 17 RESTgym
+        # specs that an LLM judge labeled as the same kind of value or not. Above 0.7 is a
+        # match (the best F1). The floor for fallback edges admits the same share of compared
+        # pairs as 0.5 did with the 50-dimensional vectors.
+        self.threshold = 0.7
+        self.tentative_floor = 0.26
         self._embedding_cache: Dict[str, Optional[np.ndarray]] = {}
 
     def encode_sentence_or_word(self, thing: str) -> Optional[np.ndarray]:

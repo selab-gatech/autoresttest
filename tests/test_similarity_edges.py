@@ -24,6 +24,9 @@ VECTORS = {
 
 
 class StubModel:
+    threshold = 0.8
+    tentative_floor = 0.5
+
     def handle_word_cases(self, word):
         return word.lower()
 

@@ -20,10 +20,10 @@ from autoresttest.utils import EmbeddingModel
 class OperationDependencyComparator:
     def __init__(self, model: EmbeddingModel):
         self.model = model
-        self.threshold = 0.8
+        self.threshold = model.threshold
         # Matches below the threshold but at or above this floor become tentative
         # (fallback) edges for operations that have no match above the threshold.
-        self.tentative_floor = 0.5
+        self.tentative_floor = model.tentative_floor
 
     def get_parameter_list(
         self, operation: OperationProperties

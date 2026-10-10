@@ -16,11 +16,18 @@ RUN mkdir -p /models \
     && echo "${MODEL_SHA256}  ${MODEL_PATH}" | sha256sum -c -
 
 # GloVe vectors for the operation graph, cached where gensim looks so no download happens at runtime.
+# The AUTORESTTEST_REF below uses the 50-dimensional vectors and later commits the 300-dimensional
+# ones, so both are included until the ref moves past that change.
 ENV GENSIM_DATA_DIR=/opt/gensim-data
-RUN mkdir -p "$GENSIM_DATA_DIR/glove-wiki-gigaword-50" \
-    && curl -fL --retry 5 --retry-all-errors -o "$GENSIM_DATA_DIR/glove-wiki-gigaword-50/glove-wiki-gigaword-50.gz" \
-        https://github.com/RaRe-Technologies/gensim-data/releases/download/glove-wiki-gigaword-50/glove-wiki-gigaword-50.gz \
-    && echo "5c55f98957aa9fed8d2ac5fb1dcff57af3b23c5a3ee7af3f7945f8d49198eb24  $GENSIM_DATA_DIR/glove-wiki-gigaword-50/glove-wiki-gigaword-50.gz" | sha256sum -c -
+RUN for vectors in \
+        glove-wiki-gigaword-50:5c55f98957aa9fed8d2ac5fb1dcff57af3b23c5a3ee7af3f7945f8d49198eb24 \
+        glove-wiki-gigaword-300:0a7aebbe49097dc6e5ffff7a25e9aa20181a6e862050ca68bd2f36e056739e00; do \
+        name="${vectors%%:*}" && file="$GENSIM_DATA_DIR/$name/$name.gz" \
+        && mkdir -p "$GENSIM_DATA_DIR/$name" \
+        && curl -fL --retry 5 --retry-all-errors -o "$file" \
+            "https://github.com/RaRe-Technologies/gensim-data/releases/download/$name/$name.gz" \
+        && echo "${vectors#*:}  $file" | sha256sum -c - || exit 1; \
+    done
 
 # Python 3.10, which AutoRestTest's pinned numpy and scipy require. OpenBLAS would otherwise
 # start a thread per host core, far more than the container's 8-CPU quota.
@@ -42,6 +49,14 @@ RUN curl -fL --retry 5 --retry-all-errors "https://github.com/selab-gatech/AutoR
         | tar -xz --strip-components=1 --wildcards --no-wildcards-match-slash '*/src' '*/pyproject.toml' '*/poetry.lock' '*/README.md' \
     && uvx --from poetry==2.2.1 poetry install --only main --no-interaction --no-ansi \
     && rm -rf /root/.cache
+
+# Save the 300-dimensional vectors in gensim's format, where AutoRestTest looks for them
+# (keyed-vectors/ beside the download). They then load in under a second instead of being
+# parsed for about 20 s at every start.
+RUN name=glove-wiki-gigaword-300 && dir="$GENSIM_DATA_DIR/$name" \
+    && mkdir -p "$dir/keyed-vectors" \
+    && python -c "import sys; from gensim.models import KeyedVectors; KeyedVectors.load_word2vec_format(sys.argv[1]).save(sys.argv[2], separately=['vectors'])" \
+        "$dir/$name.gz" "$dir/keyed-vectors/$name.kv"
 
 COPY ./tools/autoresttest/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
