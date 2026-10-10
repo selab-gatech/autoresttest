@@ -27,6 +27,7 @@ from autoresttest.models import (
 
 from autoresttest.utils import (
     remove_nulls,
+    fill_path,
     split_parameter_values,
     get_params,
     get_request_body_params,
@@ -433,8 +434,7 @@ class RequestGenerator:
             )
         )
 
-        for name, value in path_params.items():
-            endpoint_path = endpoint_path.replace("{" + name + "}", str(value))
+        endpoint_path = fill_path(endpoint_path, path_params)
 
         try:
             select_method = getattr(

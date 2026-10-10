@@ -10,6 +10,7 @@ import unicodedata
 from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, cast
+from urllib.parse import quote
 
 import numpy as np
 import requests
@@ -304,6 +305,40 @@ def _header_or_cookie_value(value: Any) -> str:
     return json.dumps(value, default=str)
 
 
+def _url_value(value: Any) -> Any:
+    """Booleans become true/false and objects compact JSON, as servers expect in URLs."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, separators=(",", ":"), default=str)
+    return value
+
+
+def query_value(value: Any) -> Any:
+    """
+    A query or form value as requests should send it. A list goes out as repeated
+    name=value pairs, the OpenAPI default; a dict would otherwise lose its values, as
+    requests sends only its keys.
+    """
+    if isinstance(value, list):
+        return [_url_value(item) for item in value]
+    return _url_value(value)
+
+
+def fill_path(endpoint_path: str, path_params: Dict[str, Any]) -> str:
+    """
+    Put percent-encoded values into the path template, so a "/" or "#" in a value stays
+    in its segment. A list becomes a,b, the OpenAPI default, without its None items.
+    """
+    for name, value in path_params.items():
+        items = value if isinstance(value, list) else [value]
+        text = ",".join(
+            quote(str(_url_value(item)), safe="") for item in items if item is not None
+        )
+        endpoint_path = endpoint_path.replace("{" + name + "}", text)
+    return endpoint_path
+
+
 def split_parameter_values(
     operation_parameters: Dict[ParameterKey, ParameterProperties],
     provided_values: Optional[Dict[ParameterKey, Any]],
@@ -314,7 +349,8 @@ def split_parameter_values(
     Ignores parameters that are not defined on the operation, unless include_undefined is set: then
     (name, location) keys the operation does not define, such as mutated parameter names or
     locations, are sent in their query, header or cookie location.
-    Header and cookie values are converted to strings.
+    Header and cookie values are converted to strings, and query values to what requests
+    should send (see query_value). Path values stay as they are for fill_path.
     """
     path_params: Dict[str, Any] = {}
     query_params: Dict[str, Any] = {}
@@ -359,7 +395,7 @@ def split_parameter_values(
         elif in_value == "cookie":
             cookie_params[name] = _header_or_cookie_value(value)
         else:
-            query_params[name] = value
+            query_params[name] = query_value(value)
 
     return path_params, query_params, header_params, cookie_params
 
@@ -475,9 +511,13 @@ def _dispatch_request_inner(
 
     if "x-www-form-urlencoded" in mime_lower:
         headers.setdefault("Content-Type", mime_type)
-        body_data = get_object_shallow_mappings(payload)
-        if not body_data or not isinstance(body_data, dict):
-            body_data = {"data": payload}
+        # An empty object is an empty form, not a "data" field.
+        body_data = (
+            payload
+            if isinstance(payload, dict)
+            else get_object_shallow_mappings(payload) or {"data": payload}
+        )
+        body_data = {key: query_value(value) for key, value in body_data.items()}
         return select_method(
             full_url,
             params=params,

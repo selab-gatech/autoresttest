@@ -33,6 +33,7 @@ from autoresttest.utils import (
     UniqueValues,
     construct_basic_token,
     dispatch_request,
+    fill_path,
     get_accept_header,
     get_body_params,
     get_response_param_mappings,
@@ -525,8 +526,7 @@ class QLearning:
             )
         )
 
-        for name, value in path_params.items():
-            endpoint_path = endpoint_path.replace("{" + name + "}", str(value))
+        endpoint_path = fill_path(endpoint_path, path_params)
 
         merged_headers = header_params.copy()
         merged_headers.update(self.config.static_headers)  # Add custom headers from config
