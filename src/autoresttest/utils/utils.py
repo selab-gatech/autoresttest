@@ -621,6 +621,55 @@ def is_json_seriable(data):
         return False
 
 
+def _with_string_keys(value: Any) -> Any:
+    """Copy nested dicts with non-string keys (e.g. ParameterKey tuples) as repr strings."""
+    if isinstance(value, dict):
+        return {
+            key if isinstance(key, str) else repr(key): _with_string_keys(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_with_string_keys(item) for item in value]
+    return value
+
+
+def _value_fingerprint(value: Any) -> Any:
+    """
+    Return a hashable key for a JSON-like value. Dicts that differ only in key order get
+    the same key; unlike ==, True and 1, False and 0, and 1 and 1.0 get different keys.
+    Containers are keyed by a 16-byte digest of their JSON, which bounds memory use.
+    """
+    if value is None or isinstance(value, (str, int, float)):  # bool is an int
+        return (type(value).__name__, value)
+    try:
+        text = json.dumps(value, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        text = json.dumps(_with_string_keys(value), sort_keys=True, default=str)
+    return hashlib.blake2b(text.encode(), digest_size=16).digest()
+
+
+class UniqueValues(list):
+    """
+    A list that skips values it already holds. Membership is checked against a set of
+    fingerprints, so adding costs one fingerprint of the value, not a scan of the list.
+    """
+
+    def __init__(self, values: Iterable[Any] = ()):
+        super().__init__()
+        self._seen: Set[Any] = set()
+        for value in values:
+            self.add(value)
+
+    def add(self, value: Any) -> bool:
+        """Append the value unless an equal one is present; return whether it was added."""
+        key = _value_fingerprint(value)
+        if key in self._seen:
+            return False
+        self._seen.add(key)
+        self.append(value)
+        return True
+
+
 def get_response_text_prefix(response: requests.Response, max_bytes: int = 1000) -> str:
     """Decode only the start of a response body.
 

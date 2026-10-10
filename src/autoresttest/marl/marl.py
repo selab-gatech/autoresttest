@@ -3,7 +3,7 @@ import json
 import random
 import time
 from collections import Counter, defaultdict
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, Optional, Set
 
 import numpy as np
 import requests
@@ -30,6 +30,7 @@ from autoresttest.llm import (
 )
 from autoresttest.models import ParameterKey
 from autoresttest.utils import (
+    UniqueValues,
     construct_basic_token,
     dispatch_request,
     get_accept_header,
@@ -75,11 +76,11 @@ class QLearning:
         self.responses: dict[int, int] = defaultdict(int)
 
         self.errors: dict[str, int] = {}
-        self.unique_errors: dict[str, list[dict[str, Any]]] = {}
-        self.successful_parameters: dict[str, dict[ParameterKey, list[Any]]] = {}
-        self.successful_bodies: dict[str, dict[str, list[Any]]] = {}
-        self.successful_responses: dict[str, dict[str, list[Any]]] = {}
-        self.successful_primitives: dict[str, list[Any]] = {}
+        self.unique_errors: dict[str, UniqueValues] = {}
+        self.successful_parameters: dict[str, dict[ParameterKey, UniqueValues]] = {}
+        self.successful_bodies: dict[str, dict[str, UniqueValues]] = {}
+        self.successful_responses: dict[str, dict[str, UniqueValues]] = {}
+        self.successful_primitives: dict[str, UniqueValues] = {}
         self.operation_response_counter: dict[str, dict[int, int]] = {}
         self.mutation_count: int = 0  # Track number of mutations performed
         self._init_parameter_tracking()
@@ -660,7 +661,9 @@ class QLearning:
                 for (
                     parameter_key
                 ) in operation_node.operation_properties.parameters.keys():
-                    self.successful_parameters[operation_id][parameter_key] = []
+                    self.successful_parameters[operation_id][parameter_key] = (
+                        UniqueValues()
+                    )
 
     def _init_body_tracking(self):
         for (
@@ -676,7 +679,7 @@ class QLearning:
                 ) in operation_node.operation_properties.request_body.items():
                     body_params = get_body_params(body_properties)
                     self.successful_bodies[operation_id].update(
-                        {param: [] for param in body_params}
+                        {param: UniqueValues() for param in body_params}
                     )
 
     def _init_response_tracking(self):
@@ -699,7 +702,7 @@ class QLearning:
                             response_params = []
                             get_response_params(response_details, response_params)
                             self.successful_responses[operation_id].update(
-                                {param: [] for param in response_params}
+                                {param: UniqueValues() for param in response_params}
                             )
 
     def _construct_body_property(self, body_property, unconstructed_body):
@@ -747,15 +750,16 @@ class QLearning:
         else:
             return None
 
-    def _deconstruct_response(self, response, response_mappings: Dict[str, List]):
+    def _deconstruct_response(
+        self, response, response_mappings: Dict[str, UniqueValues]
+    ):
         if response is None:
             return
         if type(response) == dict:
             for prop, val in response.items():
                 if prop not in response_mappings:
-                    response_mappings[prop] = []
-                if val not in response_mappings[prop]:
-                    response_mappings[prop].append(val)
+                    response_mappings[prop] = UniqueValues()
+                response_mappings[prop].add(val)
                 self._deconstruct_response(val, response_mappings)
         elif type(response) == list:
             for item in response:
@@ -1559,12 +1563,8 @@ class QLearning:
                 # print("Successful response!")
                 if parameters and self.successful_parameters[operation_id]:
                     for param_key, param_val in parameters.items():
-                        if (
-                            param_key in self.successful_parameters[operation_id]
-                            and param_val
-                            not in self.successful_parameters[operation_id][param_key]
-                        ):
-                            self.successful_parameters[operation_id][param_key].append(
+                        if param_key in self.successful_parameters[operation_id]:
+                            self.successful_parameters[operation_id][param_key].add(
                                 param_val
                             )
                 if body and self.successful_bodies[operation_id]:
@@ -1572,21 +1572,15 @@ class QLearning:
                         deconstructed_body = self._deconstruct_body(body_properties)
                         if deconstructed_body:
                             for prop_name, prop_val in deconstructed_body.items():
-                                if (
-                                    prop_name in self.successful_bodies[operation_id]
-                                    and prop_val
-                                    not in self.successful_bodies[operation_id][
-                                        prop_name
-                                    ]
-                                ):
-                                    self.successful_bodies[operation_id][
-                                        prop_name
-                                    ].append(prop_val)
+                                if prop_name in self.successful_bodies[operation_id]:
+                                    self.successful_bodies[operation_id][prop_name].add(
+                                        prop_val
+                                    )
                 if (
                     response.content
                     and self.successful_responses[operation_id] is not None
                 ):
-                    deconstructed_response: Dict[str, List] = {}
+                    deconstructed_response: Dict[str, UniqueValues] = {}
                     response_content_valid = False
                     try:
                         response_content = json.loads(response.content)
@@ -1610,16 +1604,11 @@ class QLearning:
                             response_vals,
                         ) in deconstructed_response.items():
                             if response_prop in self.successful_responses[operation_id]:
+                                recorded = self.successful_responses[operation_id][
+                                    response_prop
+                                ]
                                 for response_val in response_vals:
-                                    if (
-                                        response_val
-                                        not in self.successful_responses[operation_id][
-                                            response_prop
-                                        ]
-                                    ):
-                                        self.successful_responses[operation_id][
-                                            response_prop
-                                        ].append(response_val)
+                                    recorded.add(response_val)
                             else:
                                 self.successful_responses[operation_id][
                                     response_prop
@@ -1635,18 +1624,12 @@ class QLearning:
 
                     elif response_content_valid:
                         if operation_id not in self.successful_primitives:
-                            self.successful_primitives[operation_id] = []
+                            self.successful_primitives[operation_id] = UniqueValues()
                         if isinstance(response_content, list):
                             for item in response_content:
-                                if item not in self.successful_primitives[operation_id]:
-                                    self.successful_primitives[operation_id].append(
-                                        item
-                                    )
-                        elif (
-                            response_content
-                            not in self.successful_primitives[operation_id]
-                        ):
-                            self.successful_primitives[operation_id].append(
+                                self.successful_primitives[operation_id].add(item)
+                        else:
+                            self.successful_primitives[operation_id].add(
                                 response_content
                             )
 
@@ -1680,9 +1663,8 @@ class QLearning:
                         "operation_id": operation_id,
                     }
                     if operation_id not in self.unique_errors:
-                        self.unique_errors[operation_id] = [data_signature]
-                    elif data_signature not in self.unique_errors[operation_id]:
-                        self.unique_errors[operation_id].append(data_signature)
+                        self.unique_errors[operation_id] = UniqueValues()
+                    self.unique_errors[operation_id].add(data_signature)
 
     def tui_output(self, start_time, operation_id):
         """Output current status via live TUI display."""
