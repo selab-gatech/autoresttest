@@ -105,7 +105,8 @@ prints one status line per minute with request counts and status codes.
 llama-server's log goes to standard error. The GPU is busy only during setup;
 the testing loop does not call the model.
 
-If LLM queries fail during setup, AutoRestTest prints the first failure of
+If LLM queries fail during setup, including empty or malformed replies
+(EmptyContent, InvalidResponse), AutoRestTest prints the first failure of
 each kind and its 10th, 100th, ... occurrence ("[LLM] Query failed: ..."),
 then a summary ("Failed LLM queries: APIConnectionError x262"). Operations
 whose queries failed are tested without LLM values. If every query failed,
@@ -119,6 +120,7 @@ The Dockerfile pins every download:
 
 - llama.cpp image ghcr.io/ggml-org/llama.cpp:server-cuda12-b11434, by digest.
 - Model revision d1c082be9cf3c8a514acf63b8761f4b41935842e, checked by SHA-256.
-- AutoRestTest commit 19e69456f37177547b5748a4d90bd6f18783ace2, downloaded
+- AutoRestTest commit a1b20872cb61ad0714c670197ee07ccb9fcb61c5, downloaded
   from GitHub.
-- GloVe vectors and uv 0.12.23, checked by SHA-256.
+- GloVe vectors (glove-wiki-gigaword-300) and uv 0.12.23, checked by
+  SHA-256. The vectors are saved in gensim's format at build time.
